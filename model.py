@@ -173,6 +173,26 @@ class ModelWithRecurrentHead(nn.Module):
         
         return output_states, latent_states
     
+    def compute_loss(self, logits, labels, vocab_size):
+        """
+        Compute cross-entropy loss for language modeling.
+        """
+        logits = logits.to(torch.float32) # upcast for loss calculation
+
+        # Labels is actually passed in as labels=input_ids
+        # Shift logits and labels for next-token prediction
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+
+        # Compute cross-entropy loss
+        loss_fct = nn.CrossEntropyLoss()
+        loss = loss_fct( # per token loss
+            shift_logits.view(-1, vocab_size),
+            shift_labels.view(-1)
+        )
+
+        return loss
+    
     def forward(
         self, 
         input_ids: Optional[torch.LongTensor] = None,
@@ -185,7 +205,7 @@ class ModelWithRecurrentHead(nn.Module):
         cache_position: Optional[torch.LongTensor] = None,
         n: int = 6,
         T: int = 3, 
-        logits_to_keep: Union[int, torch.Tensor] = 0, 
+        # logits_to_keep: Union[int, torch.Tensor] = 0, 
         **kwargs
     ):
         """
@@ -204,7 +224,7 @@ class ModelWithRecurrentHead(nn.Module):
         """
         # Get hidden states from base model (before custom head)
         with torch.no_grad():
-            base_outputs: BaseModelOutputWithPast = self.base_model.model(
+            base_outputs = self.base_model.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -237,11 +257,13 @@ class ModelWithRecurrentHead(nn.Module):
         )
 
         with torch.no_grad(): # really want no grad here??
-            # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-            slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-            logits = self.base_model.lm_head(output_states[:, slice_indices, :])
+            logits = self.base_model.lm_head(output_states)
 
-        return output_states.detach(), latent_states.detach(), logits
+        loss = None
+        if labels is not None:
+            loss = self.compute_loss(logits, labels, self.base_model.config.vocab_size)
+
+        return output_states.detach(), latent_states.detach(), logits, loss
 
 def main():
     base_model_name = "Qwen/Qwen3-0.6B-Base"
@@ -250,8 +272,8 @@ def main():
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
         torch_dtype="auto",
-        # device_map="auto"
-    ).to(device)
+        device_map="auto"
+    )
 
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = 2
