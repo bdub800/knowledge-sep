@@ -15,6 +15,8 @@ from transformers.cache_utils import Cache, DynamicCache
 from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
+from utils import trunc_normal_init_
+
 
 class Qwen3RecurrentModule(nn.Module):
     """
@@ -137,20 +139,32 @@ class ModelWithRecurrentHead(nn.Module):
         # Shape: (1, 1, hidden_size) - will be expanded to match batch size during forward
         hidden_size = base_model.config.hidden_size
 
-        output_init = torch.empty(1, 1, hidden_size, dtype=torch.float32)
-        latent_init = torch.empty(1, 1, hidden_size, dtype=torch.float32)
-
-        # Initialize with truncated normal: mean=0, std=1, truncated at ±2*std
-        nn.init.trunc_normal_(output_init, mean=0.0, std=1.0, a=-2.0, b=2.0)
-        nn.init.trunc_normal_(latent_init, mean=0.0, std=1.0, a=-2.0, b=2.0)
-
         # Random initialization math happens in fp32 but stored buffers are bf16
-        output_init = output_init.to(torch.bfloat16)
-        latent_init = latent_init.to(torch.bfloat16)
+        self.y_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
+        self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
 
-        # Register as non-trainable buffers (automatically handles device placement)
-        self.register_buffer("output_init", output_init, persistent=True)
-        self.register_buffer("latent_init", latent_init, persistent=True)
+        # output_init = torch.empty(1, 1, hidden_size, dtype=torch.float32)
+        # latent_init = torch.empty(1, 1, hidden_size, dtype=torch.float32)
+
+        # # Initialize with truncated normal: mean=0, std=1, truncated at ±2*std
+        # nn.init.trunc_normal_(output_init, mean=0.0, std=1.0, a=-2.0, b=2.0)
+        # nn.init.trunc_normal_(latent_init, mean=0.0, std=1.0, a=-2.0, b=2.0)
+
+        # # Random initialization math happens in fp32 but stored buffers are bf16
+        # output_init = output_init.to(torch.bfloat16)
+        # latent_init = latent_init.to(torch.bfloat16)
+
+        # # Register as non-trainable buffers (automatically handles device placement)
+        # self.register_buffer("output_init", output_init, persistent=True)
+        # self.register_buffer("latent_init", latent_init, persistent=True)
+
+    def get_inits(self, input_ids: torch.LongTensor):
+        # Expand initial states to match batch size and sequence length
+        # the states should have shape: (batch_size, seq_len, hidden_size)
+        batch_size, seq_len = input_ids.shape
+        output_init = self.y_init.expand(batch_size, seq_len, -1)
+        latent_init = self.z_init.expand(batch_size, seq_len, -1)
+        return output_init, latent_init
 
     def latent_recursion(
         self,
@@ -194,8 +208,10 @@ class ModelWithRecurrentHead(nn.Module):
         return loss
     
     def forward(
-        self, 
-        input_ids: Optional[torch.LongTensor] = None,
+        self,
+        output_states: torch.FloatTensor, # y
+        latent_states: torch.FloatTensor, # z
+        input_ids: Optional[torch.LongTensor] = None, # x
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Cache] = None,
@@ -238,13 +254,6 @@ class ModelWithRecurrentHead(nn.Module):
             # Is it really the last index?
             original_input = base_outputs.last_hidden_state
 
-            # Expand initial states to match batch size and sequence length
-            # original_input shape: (batch_size, seq_len, hidden_size)
-            batch_size, seq_len = original_input.shape[:2]
-            output_states: torch.FloatTensor = self.output_init.expand(batch_size, seq_len, -1) # type: ignore[assignment]
-            latent_states: torch.FloatTensor = self.latent_init.expand(batch_size, seq_len, -1) # type: ignore[assignment]
-
-        with torch.no_grad():
             for _ in range(T-1):
                 output_states, latent_states = self.latent_recursion(
                     output_states, latent_states, original_input,

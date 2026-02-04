@@ -1,7 +1,6 @@
 import os
 import copy
 import torch
-import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
 import argparse
@@ -23,35 +22,40 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, config):
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
 
-        # Forward pass
-        output_states, latent_states, _, loss = model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=input_ids,
-            n=config.n_latent_recursions,
-            T=config.T_outer_loops,
-        )
+        output_states, latent_states = model.get_inits(input_ids)
 
-        # Backward pass
-        optimizer.zero_grad()
-        loss.backward()
+        for sup_step in range(config.N_supervision):
+            # Forward pass
+            output_states, latent_states, _, loss = model(
+                output_states=output_states,
+                latent_states=latent_states,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=input_ids,
+                n=config.n_latent_recursions,
+                T=config.T_outer_loops,
+            )
 
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+            # Backward pass
+            optimizer.zero_grad()
+            loss.backward()
 
-        optimizer.step()
-        scheduler.step()
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
 
-        # Track metrics
-        total_loss += loss.item()
-        num_batches += 1
+            optimizer.step()
+            scheduler.step()
 
-        # Update progress bar
-        progress_bar.set_postfix({
-            'loss': loss.item(),
-            'avg_loss': total_loss / num_batches,
-            'lr': scheduler.get_last_lr()[0]
-        })
+            # Track metrics
+            total_loss += loss.item()
+            num_batches += 1
+
+            # Update progress bar
+            progress_bar.set_postfix({
+                f'loss_{sup_step}': loss.item(),
+                'avg_loss': total_loss / num_batches,
+                'lr': scheduler.get_last_lr()[0]
+            })
 
     return total_loss / num_batches
 
@@ -100,6 +104,8 @@ def main():
                         help='Number of latent recursions (n parameter)')
     parser.add_argument('--T_outer_loops', type=int, default=3,
                         help='Number of outer loops (T parameter)')
+    parser.add_argument('--N_supervision', type=int, default=8,
+                        help='Number of deep supervision steps')
 
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=4,
@@ -187,7 +193,7 @@ def main():
         lr=args.learning_rate,
     )
 
-    num_training_steps = len(train_loader) * args.num_epochs
+    num_training_steps = len(train_loader) * args.N_supervision * args.num_epochs
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=args.warmup_steps,
