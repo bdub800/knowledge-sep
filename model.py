@@ -262,7 +262,7 @@ class ModelWithRecurrentHead(nn.Module):
             attention_mask=attention_mask, n=n 
         )
 
-        with torch.no_grad(): # really want no grad here??
+        with torch.no_grad(): # really want no grad here?? Probably, smaller Qwen3 models input/output embed tied.
             logits = self.base_model.lm_head(output_states)
 
         loss = None
