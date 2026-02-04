@@ -1,4 +1,5 @@
 import os
+import json
 import copy
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
@@ -6,7 +7,7 @@ from tqdm import tqdm
 import argparse
 
 from model import ModelWithRecurrentHead, Qwen3RecurrentModule
-from data import get_dataloader
+from data import get_dataloader, get_generation_dataloader
 
 
 def train_epoch(model, train_loader, optimizer, scheduler, device, config):
@@ -74,22 +75,153 @@ def evaluate(model, eval_loader, device, config):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
 
-            # Forward pass
-            output_states, latent_states, _, loss = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                labels=input_ids,
-                n=config.n_latent_recursions,
-                T=config.T_outer_loops,
-            )
+            output_states, latent_states = model.get_inits(input_ids)
 
-            total_loss += loss.item()
-            num_batches += 1
+            loss = None
+            for sup_step in range(config.N_supervision):
+                # Forward pass
+                output_states, latent_states, _, loss = model(
+                    output_states=output_states,
+                    latent_states=latent_states,
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=input_ids,
+                    n=config.n_latent_recursions,
+                    T=config.T_outer_loops,
+                )
 
-            progress_bar.set_postfix({'loss': total_loss / num_batches})
+            # Only record loss from the last supervision step
+            if loss is not None:
+                total_loss += loss.item()
+                num_batches += 1
+
+                progress_bar.set_postfix({'loss': total_loss / num_batches})
 
     avg_loss = total_loss / num_batches
     return avg_loss
+
+
+def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_tokens=512, num_samples=None):
+    """
+    Evaluate the model by generating answers from questions and comparing to ground truth.
+    Uses batch generation for efficiency.
+
+    Args:
+        model: The model to evaluate
+        tokenizer: Tokenizer for processing text
+        eval_loader: DataLoader that yields tokenized prompts and ground truth answers
+        device: Device to run on
+        config: Configuration object with model parameters
+        max_new_tokens: Maximum number of tokens to generate
+        num_samples: Number of samples to evaluate (None for all)
+
+    Returns:
+        Dictionary with accuracy and other metrics
+    """
+    model.eval()
+
+    correct = 0
+    total = 0
+
+    progress_bar = tqdm(eval_loader, desc="Generating & Evaluating")
+
+    with torch.no_grad():
+        for batch in progress_bar:
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            ground_truths = batch['ground_truths']
+
+            batch_size = input_ids.shape[0]
+            prompt_lengths = attention_mask.sum(dim=1)  # Track original prompt lengths
+
+            # Get initial states
+            output_states, latent_states = model.get_inits(input_ids)
+
+            # Generate tokens autoregressively for the whole batch
+            generated_ids = input_ids.clone()
+
+            # Track which sequences have finished (generated EOS)
+            finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+            for _ in range(max_new_tokens):
+                # Run through recurrent processing on current sequence
+                curr_output_states, curr_latent_states = output_states, latent_states
+
+                for sup_step in range(config.N_supervision):
+                    curr_output_states, curr_latent_states, logits, _ = model(
+                        output_states=curr_output_states,
+                        latent_states=curr_latent_states,
+                        input_ids=generated_ids,
+                        attention_mask=attention_mask,
+                        labels=None,  # No labels needed for generation
+                        n=config.n_latent_recursions,
+                        T=config.T_outer_loops,
+                    )
+
+                # Get the next token from logits (greedy decoding)
+                next_token_logits = logits[:, -1, :]
+                next_tokens = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+
+                # Mark sequences that generated EOS
+                finished |= (next_tokens.squeeze(-1) == tokenizer.eos_token_id)
+
+                # Stop if all sequences have finished
+                if finished.all():
+                    break
+
+                # Append the new tokens
+                generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
+
+                # Update attention mask
+                attention_mask = torch.cat([
+                    attention_mask,
+                    torch.ones((batch_size, 1), dtype=attention_mask.dtype, device=device)
+                ], dim=-1)
+
+                # Update states for next iteration
+                output_states, latent_states = model.get_inits(generated_ids)
+
+            # Batch decode all sequences at once
+            generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+            prompt_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+
+            # Evaluate each sequence in the batch
+            for i in range(batch_size):
+                # Extract the answer (remove the prompt)
+                if generated_texts[i].startswith(prompt_texts[i]):
+                    generated_answer = generated_texts[i][len(prompt_texts[i]):].strip()
+                else:
+                    generated_answer = generated_texts[i].strip()
+
+                # Check if the generated answer matches the ground truth (exact string match)
+                if generated_answer.lower() == ground_truths[i].lower():
+                    correct += 1
+
+                total += 1
+
+                # Stop if we've reached the desired number of samples
+                if num_samples is not None and total >= num_samples:
+                    break
+
+            # Update progress bar
+            accuracy = correct / total if total > 0 else 0
+            progress_bar.set_postfix({
+                'accuracy': f'{accuracy:.4f}',
+                'correct': correct,
+                'total': total
+            })
+
+            # Stop if we've reached the desired number of samples
+            if num_samples is not None and total >= num_samples:
+                break
+
+    accuracy = correct / total if total > 0 else 0
+
+    return {
+        'accuracy': accuracy,
+        'correct': correct,
+        'total': total
+    }
 
 
 def main():
@@ -160,8 +292,9 @@ def main():
 
     base_model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        torch_dtype=torch.bfloat16,
-    ).to(device)
+        torch_dtype="auto",
+        device_map="auto"
+    )
 
     # Freeze base model
     for param in base_model.parameters():
@@ -185,7 +318,7 @@ def main():
     print(f"Model created. Trainable parameters: {trainable_params:,} / {total_params:,}")
 
     train_loader = get_dataloader(tokenizer, args.max_length, args.batch_size, seed=args.seed, train=True)
-    eval_loader = get_dataloader(tokenizer, args.max_length, args.eval_batch_size, seed=args.seed, train=False)
+    eval_loader = get_generation_dataloader(tokenizer, args.max_length, args.eval_batch_size, seed=args.seed, train=False)
 
     # Setup optimizer and scheduler
     optimizer = torch.optim.AdamW(
@@ -208,7 +341,7 @@ def main():
     print("Starting training...")
     print("="*50 + "\n")
 
-    best_eval_loss = float('inf')
+    best_eval_acc = 0
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
@@ -219,23 +352,14 @@ def main():
         print(f"Train loss: {train_loss:.4f}")
 
         # Evaluate
-        eval_loss = evaluate(model, eval_loader, device, args)
-        print(f"Eval loss: {eval_loss:.4f}")
-
-        # Save checkpoint if best
-        if eval_loss < best_eval_loss:
-            best_eval_loss = eval_loss
-            checkpoint_path = os.path.join(args.save_dir, 'best_model.pt')
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'train_loss': train_loss,
-                'eval_loss': eval_loss,
-                'config': args,
-            }, checkpoint_path)
-            print(f"Saved best model to {checkpoint_path}")
+        eval_dict = evaluate_generation(model, tokenizer, eval_loader, device, args)
+        print(f"Eval dict: {eval_dict}")
+        eval_res_path = os.path.join(args.save_dir, f'eval_res_{epoch+1}.txt')
+        with open(eval_res_path, 'w') as f:
+            json.dump(eval_dict, f, indent=4)
+        
+        if eval_dict['accuracy'] > best_eval_acc:
+            best_eval_acc = eval_dict['accuracy']
 
         # Save epoch checkpoint
         checkpoint_path = os.path.join(args.save_dir, f'checkpoint_epoch_{epoch+1}.pt')
@@ -245,14 +369,16 @@ def main():
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'train_loss': train_loss,
-            'eval_loss': eval_loss,
+            'eval_acc': eval_dict['accuracy'],
             'config': args,
         }, checkpoint_path)
         print(f"Saved checkpoint to {checkpoint_path}")
 
+
+
     print("\n" + "="*50)
     print("Training complete!")
-    print(f"Best eval loss: {best_eval_loss:.4f}")
+    print(f"Best eval acc: {best_eval_acc:.4f}")
     print("="*50)
 
 

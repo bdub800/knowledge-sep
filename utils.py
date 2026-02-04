@@ -1,7 +1,7 @@
 import math
 import torch
 
-# from https://github.com/SamsungSAILMontreal/TinyRecursiveModels
+# From https://github.com/SamsungSAILMontreal/TinyRecursiveModels
 def trunc_normal_init_(tensor: torch.Tensor, std: float = 1.0, lower: float = -2.0, upper: float = 2.0):
     # NOTE: PyTorch nn.init.trunc_normal_ is not mathematically correct, the std dev is not actually the std dev of initialized tensor
     # This function is a PyTorch version of jax truncated normal init (default init method in flax)

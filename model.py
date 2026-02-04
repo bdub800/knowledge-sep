@@ -6,7 +6,7 @@ import torch.nn as nn
 import copy
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers.models.qwen3.modeling_qwen3 import Qwen3DecoderLayer, Qwen3PreTrainedModel, Qwen3RMSNorm, Qwen3RotaryEmbedding
+from transformers.models.qwen3.modeling_qwen3 import Qwen3DecoderLayer, Qwen3RMSNorm, Qwen3RotaryEmbedding
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 
 from transformers.processing_utils import Unpack
@@ -135,11 +135,8 @@ class ModelWithRecurrentHead(nn.Module):
         self.base_model = base_model
         self.custom_head = custom_head
 
-        # Initialize non-trainable hidden states from truncated normal distribution
-        # Shape: (1, 1, hidden_size) - will be expanded to match batch size during forward
-        hidden_size = base_model.config.hidden_size
-
         # Random initialization math happens in fp32 but stored buffers are bf16
+        hidden_size = base_model.config.hidden_size
         self.y_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
         self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
 
