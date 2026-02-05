@@ -72,7 +72,6 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_t
             ground_truths = batch['ground_truths']
 
             batch_size = input_ids.shape[0]
-            prompt_lengths = attention_mask.sum(dim=1)  # Track original prompt lengths
 
             # Get initial states
             output_states, latent_states = model.get_inits(input_ids)
