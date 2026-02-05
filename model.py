@@ -140,22 +140,7 @@ class ModelWithRecurrentHead(nn.Module):
         self.y_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
         self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
 
-        # output_init = torch.empty(1, 1, hidden_size, dtype=torch.float32)
-        # latent_init = torch.empty(1, 1, hidden_size, dtype=torch.float32)
-
-        # # Initialize with truncated normal: mean=0, std=1, truncated at ±2*std
-        # nn.init.trunc_normal_(output_init, mean=0.0, std=1.0, a=-2.0, b=2.0)
-        # nn.init.trunc_normal_(latent_init, mean=0.0, std=1.0, a=-2.0, b=2.0)
-
-        # # Random initialization math happens in fp32 but stored buffers are bf16
-        # output_init = output_init.to(torch.bfloat16)
-        # latent_init = latent_init.to(torch.bfloat16)
-
-        # # Register as non-trainable buffers (automatically handles device placement)
-        # self.register_buffer("output_init", output_init, persistent=True)
-        # self.register_buffer("latent_init", latent_init, persistent=True)
-
-    def get_inits(self, input_ids: torch.LongTensor):
+    def get_inits(self, input_ids: torch.LongTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         # Expand initial states to match batch size and sequence length
         # the states should have shape: (batch_size, seq_len, hidden_size)
         batch_size, seq_len = input_ids.shape
@@ -204,22 +189,16 @@ class ModelWithRecurrentHead(nn.Module):
 
         return loss
     
-    def forward(
+    def deep_recursion(
         self,
+        original_input: torch.FloatTensor, # x
         output_states: torch.FloatTensor, # y
         latent_states: torch.FloatTensor, # z
-        input_ids: Optional[torch.LongTensor] = None, # x
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        attention_mask: torch.Tensor,
         labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
         n: int = 6,
         T: int = 3, 
         # logits_to_keep: Union[int, torch.Tensor] = 0, 
-        **kwargs
     ):
         """
         Forward pass: extract hidden states from base model and
@@ -237,20 +216,6 @@ class ModelWithRecurrentHead(nn.Module):
         """
         # Get hidden states from base model (before custom head)
         with torch.no_grad():
-            base_outputs = self.base_model.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                **kwargs,
-            )
-
-            # Is it really the last index?
-            original_input = base_outputs.last_hidden_state
-
             for _ in range(T-1):
                 output_states, latent_states = self.latent_recursion(
                     output_states, latent_states, original_input,
@@ -309,7 +274,19 @@ def main():
 
     output_states, latent_states = model.get_inits(model_inputs['input_ids'])
 
-    _, _, logits, loss = model(output_states, latent_states, labels=model_inputs['input_ids'], **model_inputs)
+    base_outputs = model.base_model.model(
+        input_ids=model_inputs['input_ids'],
+        attention_mask=model_inputs['attention_mask'],
+        use_cache=False,
+    )
+
+    original_input = base_outputs.last_hidden_state
+
+    _, _, logits, loss = model.deep_recursion(
+        original_input, output_states, latent_states,
+        attention_mask=model_inputs['attention_mask'],
+        labels=model_inputs['input_ids'])
+
     indices = torch.argmax(logits, dim=-1)
     print(f'RESULT is >> {indices}')
     print(f'LOSS is >> {loss}')

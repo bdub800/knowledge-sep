@@ -41,7 +41,7 @@ def evaluate(model, eval_loader, device, config):
     return avg_loss
 
 
-def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_tokens=512, num_samples=None):
+def evaluate_generation(model, tokenizer, eval_loader, device, config):
     """
     Evaluate the model by generating answers from questions and comparing to ground truth.
     Uses batch generation for efficiency.
@@ -73,24 +73,37 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_t
 
             batch_size = input_ids.shape[0]
 
-            # Get initial states
-            output_states, latent_states = model.get_inits(input_ids)
-
             # Generate tokens autoregressively for the whole batch
             generated_ids = input_ids.clone()
 
             # Track which sequences have finished (generated EOS)
             finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
-            for _ in range(max_new_tokens):
-                # Run through recurrent processing on current sequence
-                curr_output_states, curr_latent_states = output_states, latent_states
+            # Init kv cache for new batch
+            past_key_values = None
+
+            for i in range(config.max_new_tokens):
+                print (f'Generating {i}-th new token ...')
+                
+                # Get base model embeddings
+                base_outputs = model.base_model.model(
+                    input_ids=generated_ids,
+                    attention_mask=attention_mask,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+
+                original_input = base_outputs.last_hidden_state
+                past_key_values = base_outputs.past_key_values
+
+                # Get init states potentially with new tokens appended to context
+                output_states, latent_states = model.get_inits(generated_ids)
 
                 for sup_step in range(config.N_supervision):
-                    curr_output_states, curr_latent_states, logits, _ = model(
-                        output_states=curr_output_states,
-                        latent_states=curr_latent_states,
-                        input_ids=generated_ids,
+                    output_states, latent_states, logits, _ = model.deep_recursion(
+                        original_input=original_input,
+                        output_states=output_states,
+                        latent_states=latent_states,
                         attention_mask=attention_mask,
                         labels=None,  # No labels needed for generation
                         n=config.n_latent_recursions,
@@ -110,15 +123,17 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_t
 
                 # Append the new tokens
                 generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
+                # for debug
+                generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
+                print('GEN TEXTS ' + '>'*40)
+                print(generated_texts[0])
+                print('<'*50)
 
                 # Update attention mask
                 attention_mask = torch.cat([
                     attention_mask,
                     torch.ones((batch_size, 1), dtype=attention_mask.dtype, device=device)
                 ], dim=-1)
-
-                # Update states for next iteration
-                output_states, latent_states = model.get_inits(generated_ids)
 
             # Batch decode all sequences at once
             generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
@@ -138,10 +153,6 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_t
 
                 total += 1
 
-                # Stop if we've reached the desired number of samples
-                if num_samples is not None and total >= num_samples:
-                    break
-
             # Update progress bar
             accuracy = correct / total if total > 0 else 0
             progress_bar.set_postfix({
@@ -149,10 +160,6 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config, max_new_t
                 'correct': correct,
                 'total': total
             })
-
-            # Stop if we've reached the desired number of samples
-            if num_samples is not None and total >= num_samples:
-                break
 
     accuracy = correct / total if total > 0 else 0
 

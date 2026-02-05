@@ -24,14 +24,22 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, config):
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
 
+        # Get base model embeddings
+        base_outputs = model.base_model.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            use_cache=False,
+        )
+
+        original_input = base_outputs.last_hidden_state
         output_states, latent_states = model.get_inits(input_ids)
 
         for sup_step in range(config.N_supervision):
             # Forward pass
-            output_states, latent_states, _, loss = model(
+            output_states, latent_states, _, loss = model.deep_recursion(
+                original_input=original_input,
                 output_states=output_states,
                 latent_states=latent_states,
-                input_ids=input_ids,
                 attention_mask=attention_mask,
                 labels=input_ids,
                 n=config.n_latent_recursions,
@@ -82,6 +90,8 @@ def main():
                         help='Training batch size')
     parser.add_argument('--eval_batch_size', type=int, default=16,
                         help='Evaluation batch size')
+    parser.add_argument('--max_new_tokens', type=int, default=64,
+                        help='Max new tokens to generate during generation eval')
     parser.add_argument('--num_epochs', type=int, default=1,
                         help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=2e-5,
