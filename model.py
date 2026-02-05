@@ -262,8 +262,8 @@ class ModelWithRecurrentHead(nn.Module):
             attention_mask=attention_mask, n=n 
         )
 
-        with torch.no_grad(): # really want no grad here?? Probably, smaller Qwen3 models input/output embed tied.
-            logits = self.base_model.lm_head(output_states)
+        # input/output embeds might be tied here for Qwen3 dense models
+        logits = self.base_model.lm_head(output_states)
 
         loss = None
         if labels is not None:
@@ -277,7 +277,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
-        torch_dtype="auto",
+        dtype="auto",
         device_map="auto"
     )
 
@@ -307,9 +307,12 @@ def main():
     model_inputs = tokenizer([text], return_tensors="pt")
     model_inputs = {k: v.to(device) for k, v in model_inputs.items()}
 
-    _, _, res = model(**model_inputs)
-    indices = torch.argmax(res, dim=-1)
+    output_states, latent_states = model.get_inits(model_inputs['input_ids'])
+
+    _, _, logits, loss = model(output_states, latent_states, labels=model_inputs['input_ids'], **model_inputs)
+    indices = torch.argmax(logits, dim=-1)
     print(f'RESULT is >> {indices}')
+    print(f'LOSS is >> {loss}')
     print(f'DECODES to >> {tokenizer.batch_decode(indices)}')
 
 if __name__ == "__main__":

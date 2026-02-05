@@ -78,11 +78,11 @@ def main():
                         help='Number of deep supervision steps')
 
     # Training arguments
-    parser.add_argument('--batch_size', type=int, default=4,
+    parser.add_argument('--batch_size', type=int, default=8,
                         help='Training batch size')
-    parser.add_argument('--eval_batch_size', type=int, default=8,
+    parser.add_argument('--eval_batch_size', type=int, default=16,
                         help='Evaluation batch size')
-    parser.add_argument('--num_epochs', type=int, default=3,
+    parser.add_argument('--num_epochs', type=int, default=1,
                         help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=2e-5,
                         help='Learning rate')
@@ -130,7 +130,7 @@ def main():
 
     base_model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        torch_dtype="auto",
+        dtype="auto",
         device_map="auto"
     )
 
@@ -155,8 +155,14 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model created. Trainable parameters: {trainable_params:,} / {total_params:,}")
 
-    train_loader = get_dataloader(tokenizer, args.max_length, args.batch_size, seed=args.seed, train=True)
-    eval_loader = get_generation_dataloader(tokenizer, args.max_length, args.eval_batch_size, seed=args.seed, train=False)
+    train_loader = get_dataloader(
+        tokenizer, args.max_length, args.batch_size,
+        seed=args.seed, train=True, num_samples=args.num_train_samples
+    )
+    eval_loader = get_generation_dataloader(
+        tokenizer, args.max_length, args.eval_batch_size,
+        seed=args.seed, train=False, num_samples=args.num_eval_samples
+    )
 
     # Setup optimizer and scheduler
     optimizer = torch.optim.AdamW(
@@ -164,7 +170,8 @@ def main():
         lr=args.learning_rate,
     )
 
-    num_training_steps = len(train_loader) * args.N_supervision * args.num_epochs
+    # hard code for now
+    num_training_steps = (7473 // args.batch_size) * args.N_supervision * args.num_epochs
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=args.warmup_steps,

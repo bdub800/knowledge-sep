@@ -22,7 +22,7 @@ def tokenize(example, tokenizer, max_length):
     )
     return tokenizer(text, max_length=max_length, truncation=True)
 
-def get_dataloader(tokenizer, max_length, batch_size, seed, train=True):
+def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samples=None):
     # Load dataset
     print(f"Loading dataset...")
 
@@ -34,6 +34,8 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True):
     )
     if train:
         ds = ds.shuffle(buffer_size=10_000, seed=seed)
+    if num_samples:
+        ds = ds.take(num_samples)
 
     ds = ds.map(lambda row: tokenize(row, tokenizer, max_length), remove_columns=ds.column_names)
 
@@ -49,7 +51,7 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True):
     )
 
 
-def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=False):
+def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=False, num_samples=None):
     """
     Dataloader for generation evaluation that only provides the question part.
     Returns tokenized prompts with ground truth answers.
@@ -65,6 +67,8 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
     )
     if train:
         ds = ds.shuffle(buffer_size=10_000, seed=seed)
+    if num_samples:
+        ds = ds.take(num_samples)
 
     # Extract question and ground truth answer
     def prepare_for_generation(example):
