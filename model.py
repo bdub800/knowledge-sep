@@ -237,22 +237,27 @@ class ModelWithRecurrentHead(nn.Module):
         return output_states.detach(), latent_states.detach(), logits, loss
 
 def main():
-    base_model_name = "Qwen/Qwen3-0.6B-Base"
+    base_model_name = "Qwen/Qwen3-0.6B"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
         dtype="auto",
-        device_map="auto"
+        device_map="auto",
+        attn_implementation="flash_attention_2"
     )
 
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = 2
     print(f'the NEW config is {new_config}')
+    new_config._attn_implementation = "flash_attention_2"
 
     # Cast weights of the recurrent module to bf16 just like base model
     custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16)
 
+    print(f"Base model attention implementation: {base_model.config._attn_implementation}")
+    print(f"Custom head attention implementation: {custom_head.config._attn_implementation}")
+    
     # Create the complete model with custom head
     model = ModelWithRecurrentHead(base_model, custom_head).to(device)
 

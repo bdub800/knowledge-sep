@@ -90,11 +90,11 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     input_ids=generated_ids,
                     attention_mask=attention_mask,
                     past_key_values=past_key_values,
-                    use_cache=True,
+                    use_cache=False,
                 )
 
                 original_input = base_outputs.last_hidden_state
-                past_key_values = base_outputs.past_key_values
+                # past_key_values = base_outputs.past_key_values
 
                 # Get init states potentially with new tokens appended to context
                 output_states, latent_states = model.get_inits(generated_ids)
@@ -109,6 +109,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                         n=config.n_latent_recursions,
                         T=config.T_outer_loops,
                     )
+                
+                logits = model.base_model.lm_head(output_states)
 
                 # Get the next token from logits (greedy decoding)
                 next_token_logits = logits[:, -1, :]

@@ -11,11 +11,13 @@ from data import get_dataloader, get_generation_dataloader
 from eval import evaluate, evaluate_generation
 
 
-def train_epoch(model, train_loader, optimizer, scheduler, device, config):
+def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, config):
     """Train for one epoch."""
     model.train()
+    total_ending_loss = 0
     total_loss = 0
     num_batches = 0
+    num_sub_batches = 0
 
     progress_bar = tqdm(train_loader, desc="Training")
 
@@ -56,16 +58,26 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, config):
             optimizer.step()
             scheduler.step()
 
-            # Track metrics
             total_loss += loss.item()
-            num_batches += 1
+            num_sub_batches += 1
+
+            if sup_step == config.N_supervision - 1:
+                total_ending_loss += loss.item()
+                num_batches += 1
 
             # Update progress bar
             progress_bar.set_postfix({
                 f'loss_{sup_step}': loss.item(),
-                'avg_loss': total_loss / num_batches,
-                'lr': scheduler.get_last_lr()[0]
+                'avg_loss': total_loss/num_sub_batches,
+                'avg_ending_loss': total_ending_loss / num_batches if num_batches else 0,
+                'lr': scheduler.get_last_lr()[0],
+                'num_batches': num_batches, 
             })
+
+        if num_batches % 100 == 0:
+            eval_dict = evaluate_generation(model, tokenizer, eval_loader, device, config)
+            print(f"Eval dict: {eval_dict}")
+            model.train()
 
     return total_loss / num_batches
 
@@ -90,7 +102,7 @@ def main():
                         help='Training batch size')
     parser.add_argument('--eval_batch_size', type=int, default=16,
                         help='Evaluation batch size')
-    parser.add_argument('--max_new_tokens', type=int, default=64,
+    parser.add_argument('--max_new_tokens', type=int, default=256,
                         help='Max new tokens to generate during generation eval')
     parser.add_argument('--num_epochs', type=int, default=1,
                         help='Number of training epochs')
@@ -141,7 +153,8 @@ def main():
     base_model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         dtype="auto",
-        device_map="auto"
+        device_map="auto",
+        attn_implementation="flash_attention_2"  # https://huggingface.co/docs/transformers/main/attention_interface
     )
 
     # Freeze base model
@@ -154,9 +167,13 @@ def main():
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = args.num_recurrent_layers
     print(f"Recurrent head config: {args.num_recurrent_layers} layers")
+    new_config._attn_implementation = "flash_attention_2"  # Ensure custom head uses it too
 
     # Create recurrent head
     custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16)
+
+    print(f"Base model attention implementation: {base_model.config._attn_implementation}")
+    print(f"Custom head attention implementation: {custom_head.config._attn_implementation}")
 
     # Create complete model
     model = ModelWithRecurrentHead(base_model, custom_head).to(device)
@@ -203,18 +220,18 @@ def main():
         print("-" * 50)
 
         # Train
-        train_loss = train_epoch(model, train_loader, optimizer, scheduler, device, args)
+        train_loss = train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, args)
         print(f"Train loss: {train_loss:.4f}")
 
         # Evaluate
-        eval_dict = evaluate_generation(model, tokenizer, eval_loader, device, args)
-        print(f"Eval dict: {eval_dict}")
-        eval_res_path = os.path.join(args.save_dir, f'eval_res_{epoch+1}.txt')
-        with open(eval_res_path, 'w') as f:
-            json.dump(eval_dict, f, indent=4)
+        # eval_dict = evaluate_generation(model, tokenizer, eval_loader, device, args)
+        # print(f"Eval dict: {eval_dict}")
+        # eval_res_path = os.path.join(args.save_dir, f'eval_res_{epoch+1}.txt')
+        # with open(eval_res_path, 'w') as f:
+        #     json.dump(eval_dict, f, indent=4)
         
-        if eval_dict['accuracy'] > best_eval_acc:
-            best_eval_acc = eval_dict['accuracy']
+        # if eval_dict['accuracy'] > best_eval_acc:
+        #     best_eval_acc = eval_dict['accuracy']
 
         # Save epoch checkpoint
         checkpoint_path = os.path.join(args.save_dir, f'checkpoint_epoch_{epoch+1}.pt')
@@ -224,7 +241,6 @@ def main():
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'train_loss': train_loss,
-            'eval_acc': eval_dict['accuracy'],
             'config': args,
         }, checkpoint_path)
         print(f"Saved checkpoint to {checkpoint_path}")
@@ -233,7 +249,7 @@ def main():
 
     print("\n" + "="*50)
     print("Training complete!")
-    print(f"Best eval acc: {best_eval_acc:.4f}")
+    # print(f"Best eval acc: {best_eval_acc:.4f}")
     print("="*50)
 
 
