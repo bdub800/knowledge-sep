@@ -79,7 +79,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             print(f"Eval dict: {eval_dict}")
             model.train()
 
-    return total_loss / num_batches
+    return total_ending_loss / num_batches
 
 
 def main():

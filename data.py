@@ -87,7 +87,7 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False
+            enable_thinking=True
         )
 
         return {
