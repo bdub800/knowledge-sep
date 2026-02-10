@@ -2,6 +2,7 @@ import torch
 from tqdm import tqdm
 import argparse
 import json
+import pandas as pd
 
 from model import instantiate_model
 from data import get_generation_dataloader
