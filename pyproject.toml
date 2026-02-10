@@ -10,6 +10,7 @@ dependencies = [
     "ipywidgets>=8.1.8",
     "jupyterlab>=4.5.0",
     "numpy<=2.2",
+    "pandas>=3.0.0",
     "torch>=2.9.1",
     "tqdm>=4.67.1",
     "transformers>=4.57.1",

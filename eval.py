@@ -7,6 +7,8 @@ import pandas as pd
 from model import instantiate_model
 from data import get_generation_dataloader
 
+torch.serialization.add_safe_globals([argparse.Namespace])
+
 def evaluate(model, eval_loader, device, config):
     """Evaluate the model."""
     model.eval()
