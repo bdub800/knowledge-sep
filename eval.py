@@ -149,8 +149,14 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 else:
                     generated_answer = generated_texts[i].strip()
 
-                # Check if the generated answer matches the ground truth (exact string match)
-                if generated_answer.lower() == ground_truths[i].lower():
+                # Extract the final answer after the last "Answer:" marker
+                if "Answer:" in generated_answer:
+                    final_answer = generated_answer.split("Answer:")[-1].strip()
+                else:
+                    final_answer = generated_answer.strip()
+                final_answer = final_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
+
+                if final_answer.lower() == ground_truths[i].lower():
                     correct += 1
 
                 total += 1
