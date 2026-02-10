@@ -1,5 +1,10 @@
 import torch
 from tqdm import tqdm
+import argparse
+import json
+
+from model import instantiate_model
+from data import get_generation_dataloader
 
 def evaluate(model, eval_loader, device, config):
     """Evaluate the model."""
@@ -62,6 +67,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
     correct = 0
     total = 0
+    accuracy = 0
+    eval_data = []
 
     progress_bar = tqdm(eval_loader, desc="Generating & Evaluating")
 
@@ -138,8 +145,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 ], dim=-1)
 
             # Batch decode all sequences at once
-            generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-            prompt_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+            generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
+            prompt_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=False)
 
             # Evaluate each sequence in the batch
             for i in range(batch_size):
@@ -156,10 +163,17 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     final_answer = generated_answer.strip()
                 final_answer = final_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
 
-                if final_answer.lower() == ground_truths[i].lower():
-                    correct += 1
-
+                is_match = (final_answer.lower() == ground_truths[i].lower())
+                correct += int(is_match)
                 total += 1
+
+                eval_data.append({
+                    'id': total,
+                    'prompt': prompt_texts[i],
+                    'generated_answer': generated_answer,
+                    'final_answer': final_answer,
+                    'is_match': is_match,
+                })
 
             # Update progress bar
             accuracy = correct / total if total > 0 else 0
@@ -169,10 +183,86 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 'total': total
             })
 
-    accuracy = correct / total if total > 0 else 0
-
-    return {
+    eval_dict = {
         'accuracy': accuracy,
         'correct': correct,
         'total': total
     }
+    return eval_dict, eval_data
+
+def main():
+    parser = argparse.ArgumentParser(description='Evaluate model on some dataset')
+
+    # Model arguments
+    parser.add_argument('--ckpt_path', type=str, help='Path to saved model')
+
+    # Training arguments
+    parser.add_argument('--eval_batch_size', type=int, default=16,
+                        help='Evaluation batch size')
+    parser.add_argument('--max_new_tokens', type=int, default=256,
+                        help='Max new tokens to generate during generation eval')
+    parser.add_argument('--max_length', type=int, default=32768,
+                        help='Maximum sequence length')
+
+    # Dataset arguments
+    parser.add_argument('--num_eval_samples', type=int, default=None,
+                        help='Number of evaluation samples (None for all)')
+
+    # Other arguments
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed')
+
+    args = parser.parse_args()
+
+    # Set random seed
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    # Setup device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Load checkpoint and rebuild model
+    print(f"Loading checkpoint: {args.ckpt_path}")
+    checkpoint = torch.load(args.ckpt_path, map_location=device)
+    train_config = checkpoint['config']
+
+    # Use training config for model hyperparams if not overridden
+    args.base_model = train_config.base_model
+    args.num_recurrent_layers = train_config.num_recurrent_layers
+    args.N_supervision = train_config.N_supervision
+    args.n_latent_recursions = train_config.n_latent_recursions
+    args.T_outer_loops = train_config.T_outer_loops
+
+    tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    print("Checkpoint loaded successfully.")
+    
+    eval_loader = get_generation_dataloader(
+        tokenizer, args.max_length, args.eval_batch_size,
+        seed=args.seed, train=False, num_samples=args.num_eval_samples
+    )
+
+    # Training loop
+    print("\n" + "="*50)
+    print("Starting evluation...")
+    print("="*50 + "\n")
+
+    eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, args)
+    eval_res_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.eval'
+    with open(eval_res_path, 'w') as f:
+        json.dump(eval_dict, f, indent=4)
+
+    eval_data_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.jsonl'
+    pd.DataFrame(eval_data).to_json(eval_data_path, lines=True, orient='records')
+
+    print("\n" + "="*50)
+    print("Evalution complete!")
+    print(f"Eval dict: {eval_dict}")
+    print("="*50)
+
+
+if __name__ == "__main__":
+    main()

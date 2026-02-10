@@ -1,12 +1,11 @@
 import os
-import json
 import copy
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
 import argparse
 
-from model import ModelWithRecurrentHead, Qwen3RecurrentModule
+from model import ModelWithRecurrentHead, Qwen3RecurrentModule, instantiate_model
 from data import get_dataloader, get_generation_dataloader
 from eval import evaluate, evaluate_generation
 
@@ -75,7 +74,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             })
 
         if num_batches % 100 == 0:
-            eval_dict = evaluate_generation(model, tokenizer, eval_loader, device, config)
+            eval_dict, _ = evaluate_generation(model, tokenizer, eval_loader, device, config)
             print(f"Eval dict: {eval_dict}")
             model.train()
 
@@ -86,7 +85,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train ModelWithRecurrentHead on some dataset')
 
     # Model arguments
-    parser.add_argument('--base_model', type=str, default='Qwen/Qwen3-0.6B-Base',
+    parser.add_argument('--base_model', type=str, default='Qwen/Qwen3-0.6B',
                         help='Base model name or path')
     parser.add_argument('--num_recurrent_layers', type=int, default=2,
                         help='Number of layers in recurrent module')
@@ -126,6 +125,8 @@ def main():
                         help='Directory to save checkpoints')
     parser.add_argument('--save_steps', type=int, default=None,
                         help='Save checkpoint every N steps (None to save only at end of epoch)')
+    parser.add_argument('--ckpt_path', type=str, default=None,
+                        help='Path to saved model')
 
     # Other arguments
     parser.add_argument('--seed', type=int, default=42,
@@ -163,20 +164,25 @@ def main():
 
     print(f"Base model frozen. Trainable parameters: {sum(p.numel() for p in base_model.parameters() if p.requires_grad)}")
 
-    # Create recurrent head config
-    new_config = copy.deepcopy(base_model.config)
-    new_config.num_hidden_layers = args.num_recurrent_layers
-    print(f"Recurrent head config: {args.num_recurrent_layers} layers")
-    new_config._attn_implementation = "flash_attention_2"  # Ensure custom head uses it too
+    # Load checkpoint and rebuild model
+    if args.ckpt_path:
+        print(f"Loading checkpoint: {args.ckpt_path}")
+        checkpoint = torch.load(args.ckpt_path, map_location=device)
+        train_config = checkpoint['config']
 
-    # Create recurrent head
-    custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16)
+        # Use training config for model hyperparams if not overridden
+        args.base_model = train_config.base_model
+        args.num_recurrent_layers = train_config.num_recurrent_layers
+        args.N_supervision = train_config.N_supervision
+        args.n_latent_recursions = train_config.n_latent_recursions
+        args.T_outer_loops = train_config.T_outer_loops
 
-    print(f"Base model attention implementation: {base_model.config._attn_implementation}")
-    print(f"Custom head attention implementation: {custom_head.config._attn_implementation}")
-
-    # Create complete model
-    model = ModelWithRecurrentHead(base_model, custom_head).to(device)
+        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print("Checkpoint loaded successfully.")
+    
+    else:
+        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
 
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in model.parameters())
@@ -213,8 +219,6 @@ def main():
     print("Starting training...")
     print("="*50 + "\n")
 
-    best_eval_acc = 0
-
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 50)
@@ -222,16 +226,6 @@ def main():
         # Train
         train_loss = train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, args)
         print(f"Train loss: {train_loss:.4f}")
-
-        # Evaluate
-        # eval_dict = evaluate_generation(model, tokenizer, eval_loader, device, args)
-        # print(f"Eval dict: {eval_dict}")
-        # eval_res_path = os.path.join(args.save_dir, f'eval_res_{epoch+1}.txt')
-        # with open(eval_res_path, 'w') as f:
-        #     json.dump(eval_dict, f, indent=4)
-        
-        # if eval_dict['accuracy'] > best_eval_acc:
-        #     best_eval_acc = eval_dict['accuracy']
 
         # Save epoch checkpoint
         checkpoint_path = os.path.join(args.save_dir, f'checkpoint_epoch_{epoch+1}.pt')
@@ -245,11 +239,8 @@ def main():
         }, checkpoint_path)
         print(f"Saved checkpoint to {checkpoint_path}")
 
-
-
     print("\n" + "="*50)
     print("Training complete!")
-    # print(f"Best eval acc: {best_eval_acc:.4f}")
     print("="*50)
 
 

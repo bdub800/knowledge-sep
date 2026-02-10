@@ -236,30 +236,39 @@ class ModelWithRecurrentHead(nn.Module):
 
         return output_states.detach(), latent_states.detach(), logits, loss
 
-def main():
-    base_model_name = "Qwen/Qwen3-0.6B"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device):
+    # Load tokenizer and base model
+    print(f"Loading base model: {base_model_name}")
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+
+    # Add padding token if not present
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
         dtype="auto",
         device_map="auto",
-        attn_implementation="flash_attention_2"
+        attn_implementation="flash_attention_2",
     )
+    for param in base_model.parameters():
+        param.requires_grad = False
 
     new_config = copy.deepcopy(base_model.config)
-    new_config.num_hidden_layers = 2
-    print(f'the NEW config is {new_config}')
+    new_config.num_hidden_layers = num_recurrent_layers
     new_config._attn_implementation = "flash_attention_2"
+    print(f'the NEW config is {new_config}')
 
-    # Cast weights of the recurrent module to bf16 just like base model
     custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16)
-
-    print(f"Base model attention implementation: {base_model.config._attn_implementation}")
-    print(f"Custom head attention implementation: {custom_head.config._attn_implementation}")
-    
-    # Create the complete model with custom head
     model = ModelWithRecurrentHead(base_model, custom_head).to(device)
+
+    return tokenizer, model
+
+def main():
+    base_model_name = "Qwen/Qwen3-0.6B"
+    num_recurrent_layers = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    tokenizer, model = instantiate_model(base_model_name, num_recurrent_layers, device)
 
     print('Prepare model input...')
     # prepare the model input
