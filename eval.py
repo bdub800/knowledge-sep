@@ -69,6 +69,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
     total = 0
     accuracy = 0
     eval_data = []
+    new_tokens = 0
 
     progress_bar = tqdm(eval_loader, desc="Generating & Evaluating")
 
@@ -117,15 +118,10 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 next_token_logits = logits[:, -1, :]
                 next_tokens = torch.argmax(next_token_logits, dim=-1, keepdim=True)
 
-                # Mark sequences that generated EOS
-                finished |= (next_tokens.squeeze(-1) == tokenizer.eos_token_id)
-
-                # Stop if all sequences have finished
-                if finished.all():
-                    break
-
                 # Append the new tokens
                 generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
+                
+                new_tokens += 1
 
                 if getattr(config, 'verbose', False):
                     generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
@@ -133,6 +129,20 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     print('GEN TEXTS ' + '>'*40)
                     print(generated_texts[0])
                     print('<'*50)
+                else:
+                    progress_bar.set_postfix({
+                        'accuracy': f'{accuracy:.4f}',
+                        'correct': correct,
+                        'total': total,
+                        'new_tokens/sample': new_tokens,
+                    })
+                
+                # Mark sequences that generated EOS
+                finished |= (next_tokens.squeeze(-1) == tokenizer.eos_token_id)
+
+                # Stop if all sequences have finished
+                if finished.all():
+                    break
 
                 # Update attention mask
                 attention_mask = torch.cat([
@@ -185,18 +195,20 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     if total % config.save_eval_interval == 0:
                         pd.DataFrame(eval_data).to_json(config.save_eval_data_path + '.jsonl', lines=True, orient='records')
 
-            # Update progress bar
+            # Update progress bar after each batch
             accuracy = correct / total if total > 0 else 0
             progress_bar.set_postfix({
                 'accuracy': f'{accuracy:.4f}',
                 'correct': correct,
-                'total': total
+                'total': total,
+                'new_tokens/sample': new_tokens,
             })
 
     eval_dict = {
         'accuracy': accuracy,
         'correct': correct,
-        'total': total
+        'total': total,
+        'new_tokens/sample': new_tokens,
     }
     return eval_dict, eval_data
 
