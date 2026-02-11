@@ -183,7 +183,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
                 if hasattr(config, "save_eval_data_path") and hasattr(config, "save_eval_interval"):
                     if total % config.save_eval_interval == 0:
-                        pd.DataFrame(eval_data).to_json(config.save_eval_data_path, lines=True, orient='records')
+                        pd.DataFrame(eval_data).to_json(config.save_eval_data_path + '.jsonl', lines=True, orient='records')
 
             # Update progress bar
             accuracy = correct / total if total > 0 else 0
@@ -223,6 +223,8 @@ def main():
                         help='Random seed')
     parser.add_argument('--save_eval_interval', type=int, default=100,
                         help='Save the evalution data every x examples')
+    parser.add_argument('--save_eval_data_path', type=str, default=None,
+                        help='Path to save eval data')
     parser.add_argument('--verbose', action='store_true',
                         help='Print generated text at each token step')
 
@@ -264,9 +266,12 @@ def main():
     print("Starting evaluation...")
     print("="*50 + "\n")
 
-    eval_res_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.eval'
-    eval_data_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.jsonl'
-    args.save_eval_data_path = eval_data_path
+    if not args.save_eval_data_path:
+        eval_res_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.eval'
+        eval_data_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.jsonl'
+    else:
+        eval_res_path = args.save_eval_data_path + '.eval'
+        eval_data_path = args.save_eval_data_path + '.jsonl'
     
     eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, args)
     
