@@ -52,19 +52,16 @@ def evaluate(model, eval_loader, device, config):
 def evaluate_generation(model, tokenizer, eval_loader, device, config):
     """
     Evaluate the model by generating answers from questions and comparing to ground truth.
-    Uses batch generation for efficiency.
 
     Args:
         model: The model to evaluate
         tokenizer: Tokenizer for processing text
         eval_loader: DataLoader that yields tokenized prompts and ground truth answers
         device: Device to run on
-        config: Configuration object with model parameters
-        max_new_tokens: Maximum number of tokens to generate
-        num_samples: Number of samples to evaluate (None for all)
+        config: Configuration object with sampling parameters and where to save prompts and generations etc.
 
     Returns:
-        Dictionary with accuracy and other metrics
+        Dictionary with accuracy and other metrics, generation data
     """
     model.eval()
 
@@ -89,24 +86,18 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             # Track which sequences have finished (generated EOS)
             finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
-            # Init kv cache for new batch
-            past_key_values = None
+            # Initial base model forward pass on full prompt with KV caching
+            base_outputs = model.base_model.model(
+                input_ids=generated_ids,
+                attention_mask=attention_mask,
+                past_key_values=None,
+                use_cache=True,
+            )
+            original_input = base_outputs.last_hidden_state
+            past_key_values = base_outputs.past_key_values
 
             for i in range(config.max_new_tokens):
-                print (f'Generating {i}-th new token ...')
-                
-                # Get base model embeddings
-                base_outputs = model.base_model.model(
-                    input_ids=generated_ids,
-                    attention_mask=attention_mask,
-                    past_key_values=past_key_values,
-                    use_cache=False,
-                )
-
-                original_input = base_outputs.last_hidden_state
-                # past_key_values = base_outputs.past_key_values
-
-                # Get init states potentially with new tokens appended to context
+                # Get init states for current sequence length
                 output_states, latent_states = model.get_inits(generated_ids)
 
                 for sup_step in range(config.N_supervision):
@@ -119,7 +110,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                         n=config.n_latent_recursions,
                         T=config.T_outer_loops,
                     )
-                
+
                 logits = model.base_model.lm_head(output_states)
 
                 # Get the next token from logits (greedy decoding)
@@ -135,17 +126,29 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
                 # Append the new tokens
                 generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
-                # for debug
-                generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
-                print('GEN TEXTS ' + '>'*40)
-                print(generated_texts[0])
-                print('<'*50)
+
+                if getattr(config, 'verbose', False):
+                    generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
+                    print(f'Generating {i}-th new token ...')
+                    print('GEN TEXTS ' + '>'*40)
+                    print(generated_texts[0])
+                    print('<'*50)
 
                 # Update attention mask
                 attention_mask = torch.cat([
                     attention_mask,
                     torch.ones((batch_size, 1), dtype=attention_mask.dtype, device=device)
                 ], dim=-1)
+
+                # Incremental base model forward: only process the new token
+                base_outputs = model.base_model.model(
+                    input_ids=next_tokens,
+                    attention_mask=attention_mask,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+                original_input = torch.cat([original_input, base_outputs.last_hidden_state], dim=1)
+                past_key_values = base_outputs.past_key_values
 
             # Batch decode all sequences at once
             generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
@@ -177,6 +180,10 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     'final_answer': final_answer,
                     'is_match': is_match,
                 })
+
+                if hasattr(config, "save_eval_data_path") and hasattr(config, "save_eval_interval"):
+                    if total % config.save_eval_interval == 0:
+                        pd.DataFrame(eval_data).to_json(config.save_eval_data_path, lines=True, orient='records')
 
             # Update progress bar
             accuracy = correct / total if total > 0 else 0
@@ -214,6 +221,10 @@ def main():
     # Other arguments
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
+    parser.add_argument('--save_eval_interval', type=int, default=100,
+                        help='Save the evalution data every x examples')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Print generated text at each token step')
 
     args = parser.parse_args()
 
@@ -250,15 +261,17 @@ def main():
 
     # Training loop
     print("\n" + "="*50)
-    print("Starting evluation...")
+    print("Starting evaluation...")
     print("="*50 + "\n")
 
-    eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, args)
     eval_res_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.eval'
+    eval_data_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.jsonl'
+    args.save_eval_data_path = eval_data_path
+    
+    eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, args)
+    
     with open(eval_res_path, 'w') as f:
         json.dump(eval_dict, f, indent=4)
-
-    eval_data_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.jsonl'
     pd.DataFrame(eval_data).to_json(eval_data_path, lines=True, orient='records')
 
     print("\n" + "="*50)
