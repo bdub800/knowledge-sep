@@ -80,6 +80,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             attention_mask = batch['attention_mask'].to(device)
             ground_truths = batch['ground_truths']
 
+            prompt_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=False)
+
             batch_size = input_ids.shape[0]
 
             # Generate tokens autoregressively for the whole batch
@@ -167,7 +169,6 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
             # Batch decode all sequences at once
             generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
-            prompt_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=False)
 
             # Evaluate each sequence in the batch
             for i in range(batch_size):
@@ -194,6 +195,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     'generated_answer': generated_answer,
                     'final_answer': final_answer,
                     'is_match': is_match,
+                    'ground_truth': ground_truths[i]
                 })
 
                 if hasattr(config, "save_eval_data_path") and hasattr(config, "save_eval_interval"):
