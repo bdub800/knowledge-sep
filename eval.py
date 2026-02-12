@@ -6,6 +6,7 @@ import pandas as pd
 
 from model import instantiate_model
 from data import get_generation_dataloader
+from utils import sample_tokens
 
 torch.serialization.add_safe_globals([argparse.Namespace])
 
@@ -114,9 +115,9 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
                 logits = model.base_model.lm_head(output_states)
 
-                # Get the next token from logits (greedy decoding)
+                # Sample the next token
                 next_token_logits = logits[:, -1, :]
-                next_tokens = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+                next_tokens = sample_tokens(next_token_logits, temperature=0.6, top_p=0.95, top_k=20, min_p=0.0)
 
                 # Append the new tokens
                 generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
