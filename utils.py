@@ -69,7 +69,7 @@ def sample_tokens(logits, temperature=0.6, top_p=0.95, top_k=20, min_p=0.0):
     if top_p < 1.0:
         sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
         cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-        mask = cumulative_probs - sorted_probs > top_p
+        mask = cumulative_probs - sorted_probs > top_p # everything in the past, not incl. current pos, is >top_p
         sorted_probs[mask] = 0.0
         probs = torch.zeros_like(probs).scatter(-1, sorted_indices, sorted_probs)
         # Re-normalize

@@ -101,6 +101,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             for i in range(config.max_new_tokens):
                 # Get init states for current sequence length
                 output_states, latent_states = model.get_inits(generated_ids)
+                if getattr(config, 'verbose', False) and (i % 100 == 0):
+                    print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
 
                 for sup_step in range(config.N_supervision):
                     output_states, latent_states, logits, _ = model.deep_recursion(
@@ -158,6 +160,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     past_key_values=past_key_values,
                     use_cache=True,
                 )
+                if getattr(config, 'verbose', False) and (i % 100 == 0):
+                    print(f'original_input shape {original_input.shape}; last_hidden_state shape {base_outputs.last_hidden_state.shape}')
                 original_input = torch.cat([original_input, base_outputs.last_hidden_state], dim=1)
                 past_key_values = base_outputs.past_key_values
 
@@ -173,12 +177,12 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 else:
                     generated_answer = generated_texts[i].strip()
 
+                # Cut off parts after EOS token
+                final_answer = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
+
                 # Extract the final answer after the last "Answer:" marker
-                if "Answer:" in generated_answer:
-                    final_answer = generated_answer.split("Answer:")[-1].strip()
-                else:
-                    final_answer = generated_answer.strip()
-                final_answer = final_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
+                if "Answer:" in final_answer:
+                    final_answer = final_answer.split("Answer:")[-1].strip()
 
                 is_match = (final_answer.lower() == ground_truths[i].lower())
                 correct += int(is_match)
