@@ -218,13 +218,15 @@ def main():
     # Model arguments
     parser.add_argument('--ckpt_path', type=str, help='Path to saved model')
 
-    # Training arguments
+    # Evaluation arguments
     parser.add_argument('--eval_batch_size', type=int, default=16,
                         help='Evaluation batch size')
     parser.add_argument('--max_new_tokens', type=int, default=256,
                         help='Max new tokens to generate during generation eval')
     parser.add_argument('--max_length', type=int, default=32768,
                         help='Maximum sequence length')
+    parser.add_argument('--N_supervision', type=int, default=8,
+                        help='Number of deep supervision steps')
 
     # Dataset arguments
     parser.add_argument('--num_eval_samples', type=int, default=None,
@@ -259,7 +261,7 @@ def main():
     # Use training config for model hyperparams if not overridden
     args.base_model = train_config.base_model
     args.num_recurrent_layers = train_config.num_recurrent_layers
-    args.N_supervision = train_config.N_supervision
+    # args.N_supervision = train_config.N_supervision
     args.n_latent_recursions = train_config.n_latent_recursions
     args.T_outer_loops = train_config.T_outer_loops
 
