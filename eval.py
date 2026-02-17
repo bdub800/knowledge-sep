@@ -1,3 +1,5 @@
+import re
+
 import torch
 from tqdm import tqdm
 import argparse
@@ -180,12 +182,18 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
                 # Cut off parts after EOS token
                 final_answer = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
+                # Cut off parts before </think> token
+                final_answer = final_answer.split('</think>')[-1].strip()
 
-                # Extract the final answer after the last "Answer:" marker
-                if "Answer:" in final_answer:
-                    final_answer = final_answer.split("Answer:")[-1].strip()
+                # Extract answer from **Final Answer**: ... \boxed{ans}
+                boxed_match = re.search(r'\*{0,2}Final Answer:\*{0,2}.*?\\boxed\{(.+?)\}', final_answer, re.IGNORECASE)
+                if boxed_match:
+                    final_answer = boxed_match.group(1).strip()
 
-                is_match = (final_answer.lower() == ground_truths[i].lower())
+                try:
+                    is_match = float(final_answer) == float(ground_truths[i])
+                except ValueError:
+                    is_match = (final_answer.lower() == ground_truths[i].lower())
                 correct += int(is_match)
                 total += 1
 

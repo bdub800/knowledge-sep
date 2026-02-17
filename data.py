@@ -1,28 +1,36 @@
+import torch
 from torch.utils.data import DataLoader
 from datasets import load_dataset
-from transformers import DataCollatorWithPadding
 
 
 def turn_to_standard_convo(example):
     thinking, ans = example['answer'].split('####')
+    # TODO: get rid of things like <<200/2=100>> in GSM8K
     thinking = thinking.strip()
     ans = ans.strip()
     standard_convo = [
         {'role': 'user', 'content': example['question']},
-        {'role': 'assistant', 'content': f'<think>\n{thinking}\n</think>\nAnswer: {ans}'}
+        {'role': 'assistant', 'content': f'<think>\n{thinking}\n</think>\n**Final Answer:** $\\boxed{{{ans}}}$'}
     ]
     return standard_convo
 
-def tokenize(example, tokenizer, max_length):
-    text = tokenizer.apply_chat_template(
+def prepare_text(example, tokenizer):
+    whole_text = tokenizer.apply_chat_template(
         turn_to_standard_convo(example),
         tokenize=False,
         add_generation_prompt=False,
-        enable_thinking=False
+        enable_thinking=True
     )
-    return tokenizer(text, max_length=max_length, truncation=True)
-
-def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samples=None):
+    just_question = [{'role': 'user', 'content': example['question']}]
+    prompt_text = tokenizer.apply_chat_template(
+        just_question,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=True
+    )
+    return {'whole_text': whole_text, 'prompt_text':prompt_text}
+    
+def get_dataloader(tokenizer, max_length, batch_size, seed, train=True):
     # Load dataset
     print(f"Loading dataset...")
 
@@ -34,20 +42,53 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samp
     )
     if train:
         ds = ds.shuffle(buffer_size=10_000, seed=seed)
-    if num_samples:
-        ds = ds.take(num_samples)
 
-    ds = ds.map(lambda row: tokenize(row, tokenizer, max_length), remove_columns=ds.column_names)
+    ds = ds.map(lambda row: prepare_text(row, tokenizer), remove_columns=ds.column_names)
 
-    collator = DataCollatorWithPadding(
-        tokenizer=tokenizer,
-        return_tensors="pt"
-    )
+#     collator = DataCollatorWithPadding(
+#         tokenizer=tokenizer,
+#         return_tensors="pt"
+#     )
+
+    def collate_fn(batch):
+        wholes = [item['whole_text'] for item in batch]
+        prompts = [item['prompt_text'] for item in batch]
+
+        tokenized = tokenizer(
+            wholes,
+            max_length=max_length,
+            padding=True,
+            return_tensors="pt",
+            truncation=True,
+            padding_side='right'
+        )
+        tokenized_prompts = tokenizer(
+            prompts,
+            max_length=max_length,
+            padding=True,
+            return_tensors="pt",
+            truncation=True,
+            padding_side='right'
+        )
+        
+        attn_mask_whole = tokenized['attention_mask']
+        lengths = tokenized_prompts['attention_mask'].sum(dim=-1)
+        # Mask out the loss on prompt tokens, prompt tokens should not be prediction targets
+        col_indices = torch.arange(attn_mask_whole.size(1)).unsqueeze(0)
+        mask = col_indices < lengths.unsqueeze(1) # no need for lengths - 1 here because loss mask shifted later in compute loss
+        loss_mask = attn_mask_whole.clone()
+        loss_mask[mask] = 0
+
+        return {
+            'input_ids': tokenized['input_ids'],
+            'attention_mask': tokenized['attention_mask'],
+            'loss_mask': loss_mask
+        }
 
     return DataLoader(
         ds,
         batch_size=batch_size,
-        collate_fn=collator
+        collate_fn=collate_fn
     )
 
 
@@ -109,7 +150,7 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
             padding=True,
             return_tensors="pt",
             truncation=True,
-            padding_side='left'  # Left padding for generation
+            padding_side='left'
         )
 
         return {

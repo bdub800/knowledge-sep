@@ -24,6 +24,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         # Move batch to device
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
+        loss_mask = batch['loss_mask'].to(device)
 
         # Get base model embeddings
         base_outputs = model.base_model.model(
@@ -43,6 +44,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 latent_states=latent_states,
                 attention_mask=attention_mask,
                 labels=input_ids,
+                loss_mask=loss_mask,
                 n=config.n_latent_recursions,
                 T=config.T_outer_loops,
             )
