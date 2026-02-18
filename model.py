@@ -16,6 +16,7 @@ from transformers.masking_utils import create_causal_mask, create_sliding_window
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from utils import trunc_normal_init_
+from loss import compute_shift_lm_loss
 
 
 class Qwen3RecurrentModule(nn.Module):
@@ -273,11 +274,14 @@ def main():
 
     original_input = base_outputs.last_hidden_state
 
-    _, _, logits, loss = model.deep_recursion(
+    _, _, logits = model.deep_recursion(
         original_input, output_states, latent_states,
-        attention_mask=model_inputs['attention_mask'],
-        labels=model_inputs['input_ids'])
+        attention_mask=model_inputs['attention_mask']
+    )
 
+    labels=model_inputs['input_ids']
+    loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size)
+    
     indices = torch.argmax(logits, dim=-1)
     print(f'RESULT is >> {indices}')
     print(f'LOSS is >> {loss}')
