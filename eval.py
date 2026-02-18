@@ -1,5 +1,3 @@
-import re
-
 import torch
 from tqdm import tqdm
 import argparse

@@ -1,11 +1,10 @@
 import os
-import copy
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
 import argparse
 
-from model import ModelWithRecurrentHead, Qwen3RecurrentModule, instantiate_model
+from model import instantiate_model
 from data import get_dataloader, get_generation_dataloader
 from eval import evaluate, evaluate_generation
 from loss import compute_shift_lm_loss
