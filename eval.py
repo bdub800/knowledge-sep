@@ -109,17 +109,14 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
 
                 for sup_step in range(config.N_supervision):
-                    output_states, latent_states, logits, _ = model.deep_recursion(
+                    output_states, latent_states, logits = model.deep_recursion(
                         original_input=original_input,
                         output_states=output_states,
                         latent_states=latent_states,
                         attention_mask=attention_mask,
-                        labels=None,  # No labels needed for generation
                         n=config.n_latent_recursions,
                         T=config.T_outer_loops,
                     )
-
-                logits = model.base_model.lm_head(output_states)
 
                 # Sample the next token
                 next_token_logits = logits[:, -1, :]
