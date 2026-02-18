@@ -8,7 +8,7 @@ import pandas as pd
 
 from model import instantiate_model
 from data import get_generation_dataloader
-from utils import sample_tokens
+from utils import sample_tokens, process_answer
 
 torch.serialization.add_safe_globals([argparse.Namespace])
 
@@ -180,15 +180,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 else:
                     generated_answer = generated_texts[i].strip()
 
-                # Cut off parts after EOS token
-                final_answer = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
-                # Cut off parts before </think> token
-                final_answer = final_answer.split('</think>')[-1].strip()
-
-                # Extract answer from **Final Answer**: ... \boxed{ans}
-                boxed_match = re.search(r'\*{0,2}Final Answer:\*{0,2}.*?\\boxed\{(.+?)\}', final_answer, re.IGNORECASE)
-                if boxed_match:
-                    final_answer = boxed_match.group(1).strip()
+                final_answer, thinking = process_answer(tokenizer, generated_answer)
 
                 try:
                     is_match = float(final_answer) == float(ground_truths[i])
@@ -201,6 +193,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     'id': total,
                     'prompt': prompt_texts[i],
                     'generated_answer': generated_answer,
+                    'thinking': thinking,
                     'final_answer': final_answer,
                     'is_match': is_match,
                     'ground_truth': ground_truths[i]

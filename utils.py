@@ -1,5 +1,7 @@
 import math
 import torch
+import re
+from typing import Tuple
 
 # From https://github.com/SamsungSAILMontreal/TinyRecursiveModels
 def trunc_normal_init_(tensor: torch.Tensor, std: float = 1.0, lower: float = -2.0, upper: float = 2.0):
@@ -30,7 +32,7 @@ def trunc_normal_init_(tensor: torch.Tensor, std: float = 1.0, lower: float = -2
     return tensor
 
 
-def sample_tokens(logits, temperature=0.6, top_p=0.95, top_k=20, min_p=0.0):
+def sample_tokens(logits: torch.Tensor, temperature: float = 0.6, top_p: float = 0.95, top_k: float = 20, min_p: float = 0.0):
     """Sample from logits with temperature, min-p, top-k, and top-p filtering.
 
     Args:
@@ -77,3 +79,28 @@ def sample_tokens(logits, temperature=0.6, top_p=0.95, top_k=20, min_p=0.0):
 
     next_tokens = torch.multinomial(probs, num_samples=1)
     return next_tokens
+
+def process_answer(tokenizer, generated_answer: str) -> Tuple[str, str]:
+    # Cut off parts after EOS token
+    before_eos = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
+    split_by_end_think = before_eos.split('</think>')
+    if len(split_by_end_think) == 1:
+        thinking = split_by_end_think[0]
+        final_answer = split_by_end_think[0]
+    else:
+        # part before last </think> token
+        thinking = '</think>'.join(split_by_end_think[:-1])
+        # part after last </think> token
+        final_answer = split_by_end_think[-1].strip()
+
+    # Extract answer from **Final Answer:** ... \boxed{ans}
+    BOXED_REGEX_OPTIONAL_FINAL_ANSWER = r'(?:\*{0,2}Final Answer:?\*{0,2})?\s*.*\\boxed\{(.+?)\}'
+    BOXED_REGEX_REQUIRE_FINAL_ANSWER = r'\*{0,2}Final Answer:?\*{0,2}\s*.*\\boxed\{(.+?)\}'
+    boxed_match = re.search(BOXED_REGEX_OPTIONAL_FINAL_ANSWER, final_answer, re.IGNORECASE)
+    if boxed_match:
+        final_answer = boxed_match.group(1).strip()
+    else:
+        boxed_match = re.search(BOXED_REGEX_REQUIRE_FINAL_ANSWER, thinking, re.IGNORECASE)
+        if boxed_match:
+            final_answer = boxed_match.group(1).strip()
+    return final_answer, thinking
