@@ -30,7 +30,7 @@ def prepare_text(example, tokenizer):
     )
     return {'whole_text': whole_text, 'prompt_text':prompt_text}
     
-def get_dataloader(tokenizer, max_length, batch_size, seed, train=True):
+def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samples=None):
     # Load dataset
     print(f"Loading dataset...")
 
@@ -42,6 +42,8 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True):
     )
     if train:
         ds = ds.shuffle(buffer_size=10_000, seed=seed)
+    if num_samples:
+        ds = ds.take(num_samples)
 
     ds = ds.map(lambda row: prepare_text(row, tokenizer), remove_columns=ds.column_names)
 
