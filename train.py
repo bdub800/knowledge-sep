@@ -8,6 +8,7 @@ import argparse
 from model import ModelWithRecurrentHead, Qwen3RecurrentModule, instantiate_model
 from data import get_dataloader, get_generation_dataloader
 from eval import evaluate, evaluate_generation
+from loss import compute_shift_lm_loss
 
 
 def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, config):
@@ -38,16 +39,17 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
         for sup_step in range(config.N_supervision):
             # Forward pass
-            output_states, latent_states, _, loss = model.deep_recursion(
+            output_states, latent_states, logits = model.deep_recursion(
                 original_input=original_input,
                 output_states=output_states,
                 latent_states=latent_states,
                 attention_mask=attention_mask,
-                labels=input_ids,
-                loss_mask=loss_mask,
                 n=config.n_latent_recursions,
                 T=config.T_outer_loops,
             )
+
+            labels = input_ids
+            loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
 
             # Backward pass
             optimizer.zero_grad()
@@ -101,7 +103,7 @@ def main():
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=8,
                         help='Training batch size')
-    parser.add_argument('--eval_batch_size', type=int, default=16,
+    parser.add_argument('--eval_batch_size', type=int, default=2,
                         help='Evaluation batch size')
     parser.add_argument('--max_new_tokens', type=int, default=256,
                         help='Max new tokens to generate during generation eval')
@@ -119,7 +121,7 @@ def main():
     # Dataset arguments
     parser.add_argument('--num_train_samples', type=int, default=None,
                         help='Number of training samples (None for all)')
-    parser.add_argument('--num_eval_samples', type=int, default=None,
+    parser.add_argument('--num_eval_samples', type=int, default=2,
                         help='Number of evaluation samples (None for all)')
 
     # Logging and saving
@@ -133,6 +135,8 @@ def main():
     # Other arguments
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Print generated text at each token step')
 
     args = parser.parse_args()
 
