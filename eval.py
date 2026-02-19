@@ -1,3 +1,5 @@
+import os
+
 import torch
 from tqdm import tqdm
 import argparse
@@ -194,9 +196,9 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     'ground_truth': ground_truths[i]
                 })
 
-                if hasattr(config, "save_eval_data_path") and hasattr(config, "save_eval_interval"):
+                if hasattr(config, "save_eval_interval") and config.save_eval_interval > 0:
                     if total % config.save_eval_interval == 0:
-                        pd.DataFrame(eval_data).to_json(config.save_eval_data_path + '.jsonl', lines=True, orient='records')
+                        pd.DataFrame(eval_data).to_json(config.save_eval_data_path, lines=True, orient='records')
 
             # Update progress bar after each batch
             accuracy = correct / total if total > 0 else 0
@@ -228,7 +230,7 @@ def main():
                         help='Max new tokens to generate during generation eval')
     parser.add_argument('--max_length', type=int, default=32768,
                         help='Maximum sequence length')
-    parser.add_argument('--N_supervision', type=int, default=8,
+    parser.add_argument('--N_supervision', type=int, default=1,
                         help='Number of deep supervision steps')
 
     # Dataset arguments
@@ -240,8 +242,8 @@ def main():
                         help='Random seed')
     parser.add_argument('--save_eval_interval', type=int, default=100,
                         help='Save the evalution data every x examples')
-    parser.add_argument('--save_eval_data_path', type=str, default=None,
-                        help='Path to save eval data')
+    parser.add_argument('--save_eval_dir', type=str, default=None,
+                        help='Dir to save eval data')
     parser.add_argument('--verbose', action='store_true',
                         help='Print generated text at each token step')
 
@@ -278,21 +280,23 @@ def main():
         seed=args.seed, train=False, num_samples=args.num_eval_samples
     )
 
-    # Training loop
     print("\n" + "="*50)
     print("Starting evaluation...")
     print("="*50 + "\n")
 
-    if not args.save_eval_data_path:
-        eval_res_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.eval'
-        eval_data_path = '.'.join(args.ckpt_path.split('.')[:-1]) + '.jsonl'
-    else:
-        eval_res_path = args.save_eval_data_path + '.eval'
-        eval_data_path = args.save_eval_data_path + '.jsonl'
+    # Create save directory
+    os.makedirs(args.save_eval_dir, exist_ok=True)
+
+    eval_dict_name = args.ckpt_path.split('/')[-1] + '.dict'
+    eval_data_name = args.ckpt_path.split('/')[-1] + '.jsonl'
+    eval_dict_path = os.path.join(args.save_eval_dir, eval_dict_name)
+    eval_data_path = os.path.join(args.save_eval_dir, eval_data_name)
+
+    args.save_eval_data_path = eval_data_path
     
     eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, args)
     
-    with open(eval_res_path, 'w') as f:
+    with open(eval_dict_path, 'w') as f:
         json.dump(eval_dict, f, indent=4)
     pd.DataFrame(eval_data).to_json(eval_data_path, lines=True, orient='records')
 

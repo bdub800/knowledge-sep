@@ -32,7 +32,7 @@ def trunc_normal_init_(tensor: torch.Tensor, std: float = 1.0, lower: float = -2
     return tensor
 
 
-def sample_tokens(logits: torch.Tensor, temperature: float = 0.6, top_p: float = 0.95, top_k: float = 20, min_p: float = 0.0):
+def sample_tokens(logits: torch.Tensor, temperature: float = 0.6, top_p: float = 0.95, top_k: int = 20, min_p: float = 0.0):
     """Sample from logits with temperature, min-p, top-k, and top-p filtering.
 
     Args:
