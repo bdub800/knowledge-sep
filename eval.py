@@ -73,6 +73,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
     accuracy = 0
     eval_data = []
     new_tokens = 0
+    num_batches = 0
 
     progress_bar = tqdm(eval_loader, desc="Generating & Evaluating")
 
@@ -202,11 +203,12 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
             # Update progress bar after each batch
             accuracy = correct / total if total > 0 else 0
+            num_batches += 1
             progress_bar.set_postfix({
                 'accuracy': f'{accuracy:.4f}',
                 'correct': correct,
                 'total': total,
-                'new_tokens/sample': new_tokens,
+                'new_tokens/sample': new_tokens / num_batches,
             })
 
     eval_dict = {
