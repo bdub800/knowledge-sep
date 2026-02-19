@@ -1,3 +1,5 @@
+import re
+
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_dataset
@@ -5,9 +7,10 @@ from datasets import load_dataset
 
 def turn_to_standard_convo(example):
     thinking, ans = example['answer'].split('####')
-    # TODO: get rid of things like <<200/2=100>> in GSM8K
     thinking = thinking.strip()
     ans = ans.strip()
+    # get rid of things like <<200/2=100>> in GSM8K
+    thinking = re.sub(r'<<.*?>>', '', thinking)
     standard_convo = [
         {'role': 'user', 'content': example['question']},
         {'role': 'assistant', 'content': f'<think>\n{thinking}\n</think>\n**Final Answer:** $\\boxed{{{ans}}}$'}
