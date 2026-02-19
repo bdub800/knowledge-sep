@@ -47,7 +47,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 T=config.T_outer_loops,
             )
 
-            labels = input_ids
+            labels = input_ids.clone()
             loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
 
             # Backward pass
