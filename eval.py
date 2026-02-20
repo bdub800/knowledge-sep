@@ -215,7 +215,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
         'accuracy': accuracy,
         'correct': correct,
         'total': total,
-        'new_tokens/sample': new_tokens,
+        'new_tokens/sample': new_tokens / num_batches,
     }
     return eval_dict, eval_data
 
