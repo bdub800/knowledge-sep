@@ -122,6 +122,9 @@ def main():
                         help='Number of training samples (None for all)')
     parser.add_argument('--num_eval_samples', type=int, default=2,
                         help='Number of evaluation samples (None for all)')
+    parser.add_argument('--enable_cot', type=str, default='standard',
+                        choices=['standard', 'after_scratch_pad', 'none_at_all'],
+                        help='Chain-of-thought mode')
 
     # Logging and saving
     parser.add_argument('--save_dir', type=str, default='./checkpoints',
@@ -195,7 +198,8 @@ def main():
 
     train_loader = get_dataloader(
         tokenizer, args.max_length, args.batch_size,
-        seed=args.seed, train=True, num_samples=args.num_train_samples
+        seed=args.seed, train=True, num_samples=args.num_train_samples,
+        enable_cot=args.enable_cot,
     )
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,

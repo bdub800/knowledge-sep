@@ -5,21 +5,30 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 
 
-def turn_to_standard_convo(example):
+def turn_to_standard_convo(example, enable_cot):
     thinking, ans = example['answer'].split('####')
     thinking = thinking.strip()
     ans = ans.strip()
     # get rid of things like <<200/2=100>> in GSM8K
     thinking = re.sub(r'<<.*?>>', '', thinking)
+    if enable_cot == 'standard':
+        content = f'<think>\n{thinking}\n</think>\n\n**Final Answer:** $\\boxed{{{ans}}}$'
+    elif enable_cot == 'after_scratch_pad':
+        content = f'<think>\n\n</think>\n\n{thinking}\n\n**Final Answer:** $\\boxed{{{ans}}}$'
+    elif enable_cot == 'none_at_all':
+        content = f'<think>\n\n</think>\n\n**Final Answer:** $\\boxed{{{ans}}}$'
+    else:
+        raise ValueError(f'enable_cot got value {enable_cot} which is not in the list of options')
+
     standard_convo = [
         {'role': 'user', 'content': example['question']},
-        {'role': 'assistant', 'content': f'<think>\n{thinking}\n</think>\n**Final Answer:** $\\boxed{{{ans}}}$'}
+        {'role': 'assistant', 'content': content}
     ]
     return standard_convo
 
-def prepare_text(example, tokenizer):
+def prepare_text(example, tokenizer, enable_cot):
     whole_text = tokenizer.apply_chat_template(
-        turn_to_standard_convo(example),
+        turn_to_standard_convo(example, enable_cot),
         tokenize=False,
         add_generation_prompt=False,
         enable_thinking=True
@@ -33,7 +42,7 @@ def prepare_text(example, tokenizer):
     )
     return {'whole_text': whole_text, 'prompt_text':prompt_text}
     
-def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samples=None):
+def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samples=None, enable_cot='standard'):
     # Load dataset
     print(f"Loading dataset...")
 
@@ -48,7 +57,7 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samp
     if num_samples:
         ds = ds.take(num_samples)
 
-    ds = ds.map(lambda row: prepare_text(row, tokenizer), remove_columns=ds.column_names)
+    ds = ds.map(lambda row: prepare_text(row, tokenizer, enable_cot=enable_cot), remove_columns=ds.column_names)
 
 #     collator = DataCollatorWithPadding(
 #         tokenizer=tokenizer,
@@ -97,7 +106,7 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samp
     )
 
 
-def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=False, num_samples=None):
+def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=False, num_samples=None, enable_cot='standard'):
     """
     Dataloader for generation evaluation that only provides the question part.
     Returns tokenized prompts with ground truth answers.
@@ -129,11 +138,17 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
         messages = [
             {'role': 'user', 'content': example['question']}
         ]
+        if enable_cot == 'standard':
+            enable_thinking = True
+        elif enable_cot in ['after_scratch_pad', 'none_at_all']:
+            enable_thinking = False
+        else:
+            raise ValueError(f'enable_cot got value {enable_cot} which is not in the list of options')
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=True
+            enable_thinking=enable_thinking
         )
 
         return {

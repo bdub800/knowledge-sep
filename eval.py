@@ -240,6 +240,9 @@ def main():
                         help='Number of evaluation samples (None for all)')
     parser.add_argument('--train_set', action='store_true',
                         help='Eval on train set instead of test set')
+    parser.add_argument('--enable_cot', type=str, default='standard',
+                        choices=['standard', 'after_scratch_pad', 'none_at_all'],
+                        help='Chain-of-thought mode')
 
     # Other arguments
     parser.add_argument('--seed', type=int, default=42,
@@ -281,7 +284,8 @@ def main():
     
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,
-        seed=args.seed, train=args.train_set, num_samples=args.num_eval_samples
+        seed=args.seed, train=args.train_set, num_samples=args.num_eval_samples,
+        enable_cot=args.enable_cot
     )
 
     print("\n" + "="*50)
