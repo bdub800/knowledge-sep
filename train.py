@@ -3,6 +3,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
 import argparse
+import wandb
 
 from model import instantiate_model
 from data import get_dataloader, get_generation_dataloader
@@ -10,7 +11,7 @@ from eval import evaluate, evaluate_generation
 from loss import compute_shift_lm_loss
 
 
-def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, config):
+def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, config, global_step=0):
     """Train for one epoch."""
     model.train()
     total_ending_loss = 0
@@ -67,21 +68,39 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 total_ending_loss += loss.item()
                 num_batches += 1
 
+            cur_lr = scheduler.get_last_lr()[0]
+            avg_loss = total_loss / num_sub_batches
+            avg_ending_loss = total_ending_loss / num_batches if num_batches else 0
+
             # Update progress bar
             progress_bar.set_postfix({
-                f'loss_{sup_step}': loss.item(),
-                'avg_loss': total_loss/num_sub_batches,
-                'avg_ending_loss': total_ending_loss / num_batches if num_batches else 0,
-                'lr': scheduler.get_last_lr()[0],
-                'num_batches': num_batches, 
+                f'loss_sup{sup_step}': loss.item(),
+                'avg_loss': avg_loss,
+                'avg_ending_loss': avg_ending_loss,
+                'lr': cur_lr,
+                'num_batches': num_batches,
             })
 
+            wandb.log({
+                f'train/loss_sup{sup_step}': loss.item(),
+                'train/avg_loss': avg_loss,
+                'train/avg_ending_loss': avg_ending_loss,
+                'train/lr': cur_lr,
+            }, step=global_step)
+            global_step += 1
+
         if num_batches % 100 == 0:
-            eval_dict, _ = evaluate_generation(model, tokenizer, eval_loader, device, config)
+            eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, config)
             print(f"Eval dict: {eval_dict}")
+            columns = list(eval_data[0].keys())
+            table = wandb.Table(columns=columns, data=[[row[c] for c in columns] for row in eval_data])
+            wandb.log({
+                **{f'eval/overview/{k}': v for k, v in eval_dict.items()},
+                f'eval/samples_step{global_step}': table,
+            }, step=global_step)
             model.train()
 
-    return total_ending_loss / num_batches
+    return total_ending_loss / num_batches, global_step
 
 
 def main():
@@ -140,6 +159,12 @@ def main():
     parser.add_argument('--verbose', action='store_true',
                         help='Print generated text at each token step')
 
+    # Wandb arguments
+    parser.add_argument('--wandb_project', type=str, default='knowledge-sep-gsm8k',
+                        help='Wandb project name')
+    parser.add_argument('--wandb_run_name', type=str, default=None,
+                        help='Wandb run name (None for auto-generated)')
+
     args = parser.parse_args()
 
     # Set random seed
@@ -181,9 +206,9 @@ def main():
         # Use training config for model hyperparams if not overridden
         args.base_model = train_config.base_model
         args.num_recurrent_layers = train_config.num_recurrent_layers
-        args.N_supervision = train_config.N_supervision
-        args.n_latent_recursions = train_config.n_latent_recursions
-        args.T_outer_loops = train_config.T_outer_loops
+        # args.N_supervision = train_config.N_supervision
+        # args.n_latent_recursions = train_config.n_latent_recursions
+        # args.T_outer_loops = train_config.T_outer_loops
 
         tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -203,7 +228,8 @@ def main():
     )
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,
-        seed=args.seed, train=False, num_samples=args.num_eval_samples
+        seed=args.seed, train=False, num_samples=args.num_eval_samples,
+        enable_cot=args.enable_cot,
     )
 
     # Setup optimizer and scheduler
@@ -228,13 +254,21 @@ def main():
     print("Starting training...")
     print("="*50 + "\n")
 
+    wandb.init(
+        project=args.wandb_project,
+        name=args.wandb_run_name,
+        config=vars(args),
+    )
+
+    global_step = 0
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 50)
 
         # Train
-        train_loss = train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, args)
+        train_loss, global_step = train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, args, global_step)
         print(f"Train loss: {train_loss:.4f}")
+        wandb.log({'train/epoch_loss': train_loss, 'epoch': epoch + 1}, step=global_step)
 
         # Save epoch checkpoint
         checkpoint_path = os.path.join(args.save_dir, f'checkpoint_epoch_{epoch+1}.pt')

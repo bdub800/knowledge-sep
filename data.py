@@ -9,8 +9,10 @@ def turn_to_standard_convo(example, enable_cot):
     thinking, ans = example['answer'].split('####')
     thinking = thinking.strip()
     ans = ans.strip()
+    
     # get rid of things like <<200/2=100>> in GSM8K
     thinking = re.sub(r'<<.*?>>', '', thinking)
+
     if enable_cot == 'standard':
         content = f'<think>\n{thinking}\n</think>\n\n**Final Answer:** $\\boxed{{{ans}}}$'
     elif enable_cot == 'after_scratch_pad':
