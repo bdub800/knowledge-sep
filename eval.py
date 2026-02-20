@@ -226,7 +226,7 @@ def main():
     parser.add_argument('--ckpt_path', type=str, help='Path to saved model')
 
     # Evaluation arguments
-    parser.add_argument('--eval_batch_size', type=int, default=16,
+    parser.add_argument('--eval_batch_size', type=int, default=8,
                         help='Evaluation batch size')
     parser.add_argument('--max_new_tokens', type=int, default=256,
                         help='Max new tokens to generate during generation eval')
@@ -238,6 +238,8 @@ def main():
     # Dataset arguments
     parser.add_argument('--num_eval_samples', type=int, default=None,
                         help='Number of evaluation samples (None for all)')
+    parser.add_argument('--train_set', action='store_true',
+                        help='Eval on train set instead of test set')
 
     # Other arguments
     parser.add_argument('--seed', type=int, default=42,
@@ -279,7 +281,7 @@ def main():
     
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,
-        seed=args.seed, train=False, num_samples=args.num_eval_samples
+        seed=args.seed, train=args.train_set, num_samples=args.num_eval_samples
     )
 
     print("\n" + "="*50)
