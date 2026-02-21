@@ -89,7 +89,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             }, step=global_step)
             global_step += 1
 
-        if num_batches % 100 == 0:
+        if num_batches % config.eval_freq == 0:
             eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, config)
             print(f"Eval dict: {eval_dict}")
             wandb.log({
@@ -98,8 +98,8 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
             columns = list(eval_data[0].keys())
             table = wandb.Table(columns=columns, data=[[row[c] for c in columns] for row in eval_data])
-            wandb.log({f'eval/samples_step{global_step}': table})
-            
+            wandb.log({f'eval/samples/step{global_step}': table})
+
             model.train()
 
     return total_ending_loss / num_batches, global_step
@@ -137,6 +137,8 @@ def main():
                         help='Max gradient norm for clipping')
     parser.add_argument('--max_length', type=int, default=32768,
                         help='Maximum sequence length')
+    parser.add_argument('--eval_freq', type=int, default=100,
+                        help='Do eval every x batches')
 
     # Dataset arguments
     parser.add_argument('--num_train_samples', type=int, default=None,

@@ -176,11 +176,8 @@ class ModelWithRecurrentHead(nn.Module):
         output_states: torch.FloatTensor, # y
         latent_states: torch.FloatTensor, # z
         attention_mask: torch.Tensor,
-        labels: Optional[torch.LongTensor] = None,
-        loss_mask: Optional[torch.Tensor] = None,
         n: int = 6,
         T: int = 3,
-        # logits_to_keep: Union[int, torch.Tensor] = 0,
     ):
         """
         Forward pass: extract hidden states from base model and
