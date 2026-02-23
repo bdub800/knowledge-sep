@@ -46,9 +46,10 @@ class Qwen3RecurrentModule(nn.Module):
 
     def forward(
         self,
-        output_states: torch.FloatTensor, # y
-        latent_states: torch.FloatTensor, # z
-        original_input: Optional[torch.FloatTensor] = None, # x
+        # output_states: torch.FloatTensor, # y
+        # latent_states: torch.FloatTensor, # z
+        # original_input: Optional[torch.FloatTensor] = None, # x
+        states: torch.FloatTensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
         past_key_values: Optional[Cache] = None,
@@ -57,10 +58,12 @@ class Qwen3RecurrentModule(nn.Module):
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPast:
         
-        if original_input is None:
-            inputs_embeds = output_states + latent_states
-        else:
-            inputs_embeds = original_input + output_states + latent_states
+        # if original_input is None:
+        #     inputs_embeds = output_states + latent_states
+        # else:
+        #     inputs_embeds = original_input + output_states + latent_states
+
+        inputs_embeds = states
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
@@ -136,45 +139,45 @@ class ModelWithRecurrentHead(nn.Module):
         self.base_model = base_model
         self.custom_head = custom_head
 
-        # Random initialization math happens in fp32 but stored buffers are bf16
-        hidden_size = base_model.config.hidden_size
-        self.y_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
-        self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
+        # # Random initialization math happens in fp32 but stored buffers are bf16
+        # hidden_size = base_model.config.hidden_size
+        # self.y_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
+        # self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
 
-    def get_inits(self, input_ids: torch.LongTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-        # Expand initial states to match batch size and sequence length
-        # the states should have shape: (batch_size, seq_len, hidden_size)
-        batch_size, seq_len = input_ids.shape
-        output_init = self.y_init.expand(batch_size, seq_len, -1)
-        latent_init = self.z_init.expand(batch_size, seq_len, -1)
-        return output_init, latent_init
+    # def get_inits(self, input_ids: torch.LongTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
+    #     # Expand initial states to match batch size and sequence length
+    #     # the states should have shape: (batch_size, seq_len, hidden_size)
+    #     batch_size, seq_len = input_ids.shape
+    #     output_init = self.y_init.expand(batch_size, seq_len, -1)
+    #     latent_init = self.z_init.expand(batch_size, seq_len, -1)
+    #     return output_init, latent_init
 
-    def latent_recursion(
-        self,
-        output_states: torch.FloatTensor,
-        latent_states: torch.FloatTensor,
-        original_input: torch.FloatTensor,
-        attention_mask: Optional[torch.Tensor] = None, 
-        n: int = 6) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
+    # def latent_recursion(
+    #     self,
+    #     input_states: torch.FloatTensor,
+    #     # latent_states: torch.FloatTensor,
+    #     # original_input: torch.FloatTensor,
+    #     attention_mask: Optional[torch.Tensor] = None, 
+    #     n: int = 6) -> torch.FloatTensor:
 
-        for _ in range(n):
-            head_output = self.custom_head(
-                output_states=output_states, latent_states=latent_states, 
-                original_input=original_input, attention_mask=attention_mask
-            )
-            latent_states = head_output.last_hidden_state
+    #     for _ in range(n + 1):
+    #         head_output = self.custom_head(
+    #             input_states=input_states, attention_mask=attention_mask
+    #         )
+    #         input_states = head_output.last_hidden_state
         
-        head_output = self.custom_head(
-            output_states=output_states, latent_states=latent_states, attention_mask=attention_mask)
-        output_states = head_output.last_hidden_state
+    #     head_output = self.custom_head(
+    #         input_states=input_states, attention_mask=attention_mask)
+    #     output_states = head_output.last_hidden_state
         
-        return output_states, latent_states
+    #     return output_states
     
     def deep_recursion(
         self,
-        original_input: torch.FloatTensor, # x
-        output_states: torch.FloatTensor, # y
-        latent_states: torch.FloatTensor, # z
+        states: torch.FloatTensor,
+        # original_input: torch.FloatTensor, # x
+        # output_states: torch.FloatTensor, # y
+        # latent_states: torch.FloatTensor, # z
         attention_mask: torch.Tensor,
         n: int = 6,
         T: int = 3,
@@ -196,20 +199,22 @@ class ModelWithRecurrentHead(nn.Module):
         # Get hidden states from base model (before custom head)
         with torch.no_grad():
             for _ in range(T-1):
-                output_states, latent_states = self.latent_recursion(
-                    output_states, latent_states, original_input,
-                    attention_mask=attention_mask, n=n 
-                )
+                for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+                    head_output = self.custom_head(
+                        states=states, attention_mask=attention_mask
+                    )
+                    states = head_output.last_hidden_state
         
-        output_states, latent_states = self.latent_recursion(
-            output_states, latent_states, original_input,
-            attention_mask=attention_mask, n=n 
-        )
+        for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+            head_output = self.custom_head(
+                states=states, attention_mask=attention_mask
+            )
+            states = head_output.last_hidden_state
 
         # input/output embeds might be tied here for Qwen3 dense models
-        logits = self.base_model.lm_head(output_states)
+        logits = self.base_model.lm_head(states)
 
-        return output_states.detach(), latent_states.detach(), logits
+        return states.detach(), logits
 
 def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device):
     # Load tokenizer and base model
@@ -261,7 +266,7 @@ def main():
     model_inputs = tokenizer([text], return_tensors="pt")
     model_inputs = {k: v.to(device) for k, v in model_inputs.items()}
 
-    output_states, latent_states = model.get_inits(model_inputs['input_ids'])
+    # output_states, latent_states = model.get_inits(model_inputs['input_ids'])
 
     base_outputs = model.base_model.model(
         input_ids=model_inputs['input_ids'],
@@ -271,8 +276,8 @@ def main():
 
     original_input = base_outputs.last_hidden_state
 
-    _, _, logits = model.deep_recursion(
-        original_input, output_states, latent_states,
+    _, logits = model.deep_recursion(
+        original_input,
         attention_mask=model_inputs['attention_mask']
     )
 

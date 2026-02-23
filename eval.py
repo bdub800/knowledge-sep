@@ -104,16 +104,18 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             past_key_values = base_outputs.past_key_values
 
             for i in range(config.max_new_tokens):
-                # Get init states for current sequence length
-                output_states, latent_states = model.get_inits(generated_ids)
-                if getattr(config, 'verbose', False) and (i % 100 == 0):
-                    print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
+                # # Get init states for current sequence length
+                # output_states, latent_states = model.get_inits(generated_ids)
+                # if getattr(config, 'verbose', False) and (i % 100 == 0):
+                #     print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
+
+                states = original_input.clone()
 
                 for sup_step in range(config.N_supervision):
-                    output_states, latent_states, logits = model.deep_recursion(
-                        original_input=original_input,
-                        output_states=output_states,
-                        latent_states=latent_states,
+                    states, logits = model.deep_recursion(
+                        states=states,
+                        # output_states=output_states,
+                        # latent_states=latent_states,
                         attention_mask=attention_mask,
                         n=config.n_latent_recursions,
                         T=config.T_outer_loops,
@@ -162,8 +164,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     past_key_values=past_key_values,
                     use_cache=True,
                 )
-                if getattr(config, 'verbose', False) and (i % 100 == 0):
-                    print(f'original_input shape {original_input.shape}; last_hidden_state shape {base_outputs.last_hidden_state.shape}')
+                # if getattr(config, 'verbose', False) and (i % 100 == 0):
+                #     print(f'original_input shape {original_input.shape}; last_hidden_state shape {base_outputs.last_hidden_state.shape}')
                 original_input = torch.cat([original_input, base_outputs.last_hidden_state], dim=1)
                 past_key_values = base_outputs.past_key_values
 
