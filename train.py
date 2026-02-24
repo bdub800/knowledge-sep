@@ -37,21 +37,13 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         original_input = base_outputs.last_hidden_state
         # output_states, latent_states = model.get_inits(input_ids)
 
-        states = original_input
+        states = original_input.clone()
 
         for sup_step in range(config.N_supervision):
             # Forward pass
-            # output_states, latent_states, logits = model.deep_recursion(
-            #     original_input=original_input,
-            #     output_states=output_states,
-            #     latent_states=latent_states,
-            #     attention_mask=attention_mask,
-            #     n=config.n_latent_recursions,
-            #     T=config.T_outer_loops,
-            # )
-
             states, logits = model.deep_recursion(
                 states=states,
+                original_input=original_input,
                 # output_states=output_states,
                 # latent_states=latent_states,
                 attention_mask=attention_mask,

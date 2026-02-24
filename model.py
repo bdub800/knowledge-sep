@@ -48,8 +48,8 @@ class Qwen3RecurrentModule(nn.Module):
         self,
         # output_states: torch.FloatTensor, # y
         # latent_states: torch.FloatTensor, # z
-        # original_input: Optional[torch.FloatTensor] = None, # x
         states: torch.FloatTensor,
+        original_input: torch.FloatTensor, # x
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
         past_key_values: Optional[Cache] = None,
@@ -63,7 +63,7 @@ class Qwen3RecurrentModule(nn.Module):
         # else:
         #     inputs_embeds = original_input + output_states + latent_states
 
-        inputs_embeds = states
+        inputs_embeds = states + original_input
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
@@ -175,7 +175,7 @@ class ModelWithRecurrentHead(nn.Module):
     def deep_recursion(
         self,
         states: torch.FloatTensor,
-        # original_input: torch.FloatTensor, # x
+        original_input: torch.FloatTensor, # x
         # output_states: torch.FloatTensor, # y
         # latent_states: torch.FloatTensor, # z
         attention_mask: torch.Tensor,
@@ -201,13 +201,13 @@ class ModelWithRecurrentHead(nn.Module):
             for _ in range(T-1):
                 for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
                     head_output = self.custom_head(
-                        states=states, attention_mask=attention_mask
+                        states=states, original_input=original_input, attention_mask=attention_mask
                     )
                     states = head_output.last_hidden_state
         
         for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
             head_output = self.custom_head(
-                states=states, attention_mask=attention_mask
+                states=states, original_input=original_input, attention_mask=attention_mask
             )
             states = head_output.last_hidden_state
 
@@ -245,6 +245,11 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
     return tokenizer, model
 
 def main():
+    # Set random seed
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
     base_model_name = "Qwen/Qwen3-0.6B"
     num_recurrent_layers = 2
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -276,12 +281,20 @@ def main():
 
     original_input = base_outputs.last_hidden_state
 
+    print('ORIGINAL INPUT --->')
+    print(original_input)
+
+    states = original_input.clone()
+
     _, logits = model.deep_recursion(
+        states,
         original_input,
         attention_mask=model_inputs['attention_mask']
     )
+    print('logits --->')
+    print(logits)
 
-    labels=model_inputs['input_ids']
+    labels = model_inputs['input_ids']
     loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size)
     
     indices = torch.argmax(logits, dim=-1)
