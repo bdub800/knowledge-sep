@@ -21,6 +21,9 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
     progress_bar = tqdm(train_loader, desc="Training")
 
+    # Create a wandb table with INCREMENTAL logging mode
+    incr_table = None
+
     for batch in progress_bar:
         # Move batch to device
         input_ids = batch['input_ids'].to(device)
@@ -99,9 +102,12 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 f'eval/overview/{k}': v for k, v in eval_dict.items()
             }, step=global_step)
 
-            columns = list(eval_data[0].keys())
-            table = wandb.Table(columns=columns, data=[[row[c] for c in columns] for row in eval_data])
-            wandb.log({f'eval/samples/step{global_step}': table})
+            if incr_table is None:
+                columns = ['step'] + list(eval_data[0].keys())
+                incr_table = wandb.Table(columns=columns, log_mode="INCREMENTAL")
+            for row in eval_data:
+                incr_table.add_data(global_step, *[row[c] for c in eval_data[0].keys()])
+            wandb.log({'eval/samples_table': incr_table}, step=global_step)
 
             model.train()
 
