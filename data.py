@@ -18,7 +18,7 @@ def turn_to_standard_convo(example, enable_cot):
     elif enable_cot == 'after_scratch_pad':
         content = f'<think>\n\n</think>\n\n{thinking}\n\n**Final Answer:** $\\boxed{{{ans}}}$'
     elif enable_cot == 'none_at_all':
-        content = f'<think>\n\n</think>\n\n**Final Answer:** $\\boxed{{{ans}}}$'
+        content = f'<think>\n\n</think>\n\n{ans}'
     else:
         raise ValueError(f'enable_cot got value {enable_cot} which is not in the list of options')
 
@@ -28,19 +28,19 @@ def turn_to_standard_convo(example, enable_cot):
     ]
     return standard_convo
 
+
 def prepare_text(example, tokenizer, enable_cot):
     whole_text = tokenizer.apply_chat_template(
         turn_to_standard_convo(example, enable_cot),
         tokenize=False,
         add_generation_prompt=False,
-        enable_thinking=True
     )
     just_question = [{'role': 'user', 'content': example['question']}]
     prompt_text = tokenizer.apply_chat_template(
         just_question,
         tokenize=False,
         add_generation_prompt=True,
-        enable_thinking=True
+        enable_thinking=True if enable_cot == 'standard' else False
     )
     return {'whole_text': whole_text, 'prompt_text':prompt_text}
     
