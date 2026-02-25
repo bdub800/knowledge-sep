@@ -165,7 +165,8 @@ class ModelWithRecurrentHead(nn.Module):
             latent_states = head_output.last_hidden_state
         
         head_output = self.custom_head(
-            output_states=output_states, latent_states=latent_states, attention_mask=attention_mask)
+            output_states=output_states, latent_states=latent_states, 
+            original_input=None, attention_mask=attention_mask)
         output_states = head_output.last_hidden_state
         
         return output_states, latent_states
@@ -276,7 +277,7 @@ def main():
         attention_mask=model_inputs['attention_mask']
     )
 
-    labels=model_inputs['input_ids']
+    labels = model_inputs['input_ids']
     loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size)
     
     indices = torch.argmax(logits, dim=-1)
