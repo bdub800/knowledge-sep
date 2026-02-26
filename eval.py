@@ -114,7 +114,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 for sup_step in range(config.N_supervision):
                     states, logits = model.deep_recursion(
                         states=states,
-                        original_input=original_input,
+                        original_input=None,
                         # output_states=output_states,
                         # latent_states=latent_states,
                         attention_mask=attention_mask,

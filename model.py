@@ -49,7 +49,7 @@ class Qwen3RecurrentModule(nn.Module):
         # output_states: torch.FloatTensor, # y
         # latent_states: torch.FloatTensor, # z
         states: torch.FloatTensor,
-        original_input: torch.FloatTensor, # x
+        original_input: Optional[torch.FloatTensor] = None, # x
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
         past_key_values: Optional[Cache] = None,
@@ -58,12 +58,10 @@ class Qwen3RecurrentModule(nn.Module):
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPast:
         
-        # if original_input is None:
-        #     inputs_embeds = output_states + latent_states
-        # else:
-        #     inputs_embeds = original_input + output_states + latent_states
-
-        inputs_embeds = states + original_input
+        if original_input is None:
+            inputs_embeds = states
+        else:
+            inputs_embeds = states + original_input
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
@@ -197,15 +195,15 @@ class ModelWithRecurrentHead(nn.Module):
             logits: Output logits from piping output_states through the base LLM's lm head 
         """
         # Get hidden states from base model (before custom head)
-        with torch.no_grad():
-            for _ in range(T-1):
-                for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
-                    head_output = self.custom_head(
-                        states=states, original_input=original_input, attention_mask=attention_mask
-                    )
-                    states = head_output.last_hidden_state
+        # with torch.no_grad():
+        #     for _ in range(T-1):
+        #         for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+        #             head_output = self.custom_head(
+        #                 states=states, original_input=original_input, attention_mask=attention_mask
+        #             )
+        #             states = head_output.last_hidden_state
         
-        for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+        for _ in range(n * T): # just backprop all the way through time
             head_output = self.custom_head(
                 states=states, original_input=original_input, attention_mask=attention_mask
             )

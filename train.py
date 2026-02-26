@@ -46,7 +46,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             # Forward pass
             states, logits = model.deep_recursion(
                 states=states,
-                original_input=original_input,
+                original_input=None,
                 # output_states=output_states,
                 # latent_states=latent_states,
                 attention_mask=attention_mask,
