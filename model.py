@@ -194,16 +194,16 @@ class ModelWithRecurrentHead(nn.Module):
             latent_states: Detached latent states after recurrent process (for use in deep supervision process)
             logits: Output logits from piping output_states through the base LLM's lm head 
         """
-        # Get hidden states from base model (before custom head)
-        # with torch.no_grad():
-        #     for _ in range(T-1):
-        #         for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
-        #             head_output = self.custom_head(
-        #                 states=states, original_input=original_input, attention_mask=attention_mask
-        #             )
-        #             states = head_output.last_hidden_state
+
+        with torch.no_grad():
+            for _ in range(T-1):
+                for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+                    head_output = self.custom_head(
+                        states=states, original_input=original_input, attention_mask=attention_mask
+                    )
+                    states = head_output.last_hidden_state
         
-        for _ in range(n * T): # just backprop all the way through time
+        for _ in range(n+1):
             head_output = self.custom_head(
                 states=states, original_input=original_input, attention_mask=attention_mask
             )
@@ -231,6 +231,10 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
     )
     for param in base_model.parameters():
         param.requires_grad = False
+    for param in base_model.lm_head.parameters():
+        param.requires_grad = True
+
+    print(f"Base model frozen. Trainable parameters: {sum(p.numel() for p in base_model.parameters() if p.requires_grad)}")
 
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = num_recurrent_layers

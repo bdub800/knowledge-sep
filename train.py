@@ -189,27 +189,6 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load tokenizer and base model
-    print(f"Loading base model: {args.base_model}")
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-
-    # Add padding token if not present
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    base_model = AutoModelForCausalLM.from_pretrained(
-        args.base_model,
-        dtype="auto",
-        device_map="auto",
-        attn_implementation="flash_attention_2"  # https://huggingface.co/docs/transformers/main/attention_interface
-    )
-
-    # Freeze base model
-    for param in base_model.parameters():
-        param.requires_grad = False # we don't want to have optimizer states for these
-
-    print(f"Base model frozen. Trainable parameters: {sum(p.numel() for p in base_model.parameters() if p.requires_grad)}")
-
     # Load checkpoint and rebuild model
     if args.ckpt_path:
         print(f"Loading checkpoint: {args.ckpt_path}")
