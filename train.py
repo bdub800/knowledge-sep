@@ -209,10 +209,6 @@ def main():
     else:
         tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
 
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"Model created. Trainable parameters: {trainable_params:,} / {total_params:,}")
-
     train_loader = get_dataloader(
         tokenizer, args.max_length, args.batch_size,
         seed=args.seed, train=True, num_samples=args.num_train_samples,
