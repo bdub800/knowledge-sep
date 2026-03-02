@@ -135,10 +135,10 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     if i == 0: # first new token, print prompt too
                         new_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
                         print('\n\nNew Eval Generation Example ' + '>'*40)
-                        print(new_texts[0])
+                        print(new_texts[0], end='')
                     else:
                         new_texts = tokenizer.batch_decode(next_tokens, skip_special_tokens=False)
-                        print(new_texts[0])
+                        print(new_texts[0], end='')
 
                 else:
                     progress_bar.set_postfix({
