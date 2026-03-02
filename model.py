@@ -204,10 +204,10 @@ class ModelWithRecurrentHead(nn.Module):
         #             states = head_output.last_hidden_state
         
         # for _ in range(n+1):
-        #     head_output = self.custom_head(
-        #         states=states, original_input=original_input, attention_mask=attention_mask
-        #     )
-        #     states = head_output.last_hidden_state
+        head_output = self.custom_head(
+            states=states, original_input=original_input, attention_mask=attention_mask
+        )
+        states = head_output.last_hidden_state
 
         # input/output embeds might be tied here for Qwen3 dense models
         logits = self.base_model.lm_head(states)

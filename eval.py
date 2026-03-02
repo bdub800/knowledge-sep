@@ -132,11 +132,14 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 new_tokens += 1
 
                 if getattr(config, 'verbose', False):
-                    generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
-                    print(f'Generating {i}-th new token ...')
-                    print('GEN TEXTS ' + '>'*40)
-                    print(generated_texts[0])
-                    print('<'*50)
+                    if i == 0: # first new token, print prompt too
+                        new_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
+                        print('\n\nNew Eval Generation Example ' + '>'*40)
+                        print(new_texts[0])
+                    else:
+                        new_texts = tokenizer.batch_decode(next_tokens, skip_special_tokens=False)
+                        print(new_texts[0])
+
                 else:
                     progress_bar.set_postfix({
                         'accuracy': f'{accuracy:.4f}',
