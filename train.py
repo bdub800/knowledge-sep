@@ -97,7 +97,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
         if num_batches % config.eval_freq == 0:
             eval_dict, eval_data = evaluate_generation(model, tokenizer, eval_loader, device, config)
-            print(f"Eval dict: {eval_dict}")
+            print(f"\n\nEval dict: {eval_dict}")
             wandb.log({
                 f'eval/overview/{k}': v for k, v in eval_dict.items()
             }, step=global_step)
