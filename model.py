@@ -195,19 +195,19 @@ class ModelWithRecurrentHead(nn.Module):
             logits: Output logits from piping output_states through the base LLM's lm head 
         """
 
-        with torch.no_grad():
-            for _ in range(T-1):
-                for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
-                    head_output = self.custom_head(
-                        states=states, original_input=original_input, attention_mask=attention_mask
-                    )
-                    states = head_output.last_hidden_state
+        # with torch.no_grad():
+        #     for _ in range(T-1):
+        #         for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+        #             head_output = self.custom_head(
+        #                 states=states, original_input=original_input, attention_mask=attention_mask
+        #             )
+        #             states = head_output.last_hidden_state
         
-        for _ in range(n+1):
-            head_output = self.custom_head(
-                states=states, original_input=original_input, attention_mask=attention_mask
-            )
-            states = head_output.last_hidden_state
+        # for _ in range(n+1):
+        #     head_output = self.custom_head(
+        #         states=states, original_input=original_input, attention_mask=attention_mask
+        #     )
+        #     states = head_output.last_hidden_state
 
         # input/output embeds might be tied here for Qwen3 dense models
         logits = self.base_model.lm_head(states)
@@ -229,10 +229,10 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
         device_map="auto",
         attn_implementation="flash_attention_2",
     )
-    for param in base_model.parameters():
-        param.requires_grad = False
-    for param in base_model.lm_head.parameters():
-        param.requires_grad = True
+    # for param in base_model.parameters():
+    #     param.requires_grad = False
+    # for param in base_model.lm_head.parameters():
+    #     param.requires_grad = True
 
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = num_recurrent_layers
