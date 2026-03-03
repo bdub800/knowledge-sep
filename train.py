@@ -43,9 +43,6 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         states = original_input # initial states is output of base model
 
         for sup_step in range(config.N_supervision):
-            # Zero out grad first
-            optimizer.zero_grad()
-
             # Forward pass
             states, logits = model.deep_recursion(
                 states=states,
@@ -68,6 +65,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
             optimizer.step()
             scheduler.step()
+            optimizer.zero_grad()
 
             total_loss += loss.item()
             num_sub_batches += 1
