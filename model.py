@@ -230,13 +230,19 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
     for param in base_model.parameters():
         param.requires_grad = False
 
+    print(f"Base model frozen. Trainable parameters: {sum(p.numel() for p in base_model.parameters() if p.requires_grad)}")
+
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = num_recurrent_layers
     new_config._attn_implementation = "flash_attention_2"
     print(f'the NEW config is {new_config}')
 
-    custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16)
+    custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16) # type: ignore
     model = ModelWithRecurrentHead(base_model, custom_head).to(device)
+
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Model created. Trainable parameters: {trainable_params:,} / {total_params:,}")
 
     return tokenizer, model
 
