@@ -231,8 +231,8 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
     )
     for param in base_model.parameters():
         param.requires_grad = False
-    # for param in base_model.lm_head.parameters():
-    #     param.requires_grad = True
+    for param in base_model.lm_head.parameters():
+        param.requires_grad = True
 
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = num_recurrent_layers

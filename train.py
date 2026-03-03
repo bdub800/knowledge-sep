@@ -43,6 +43,9 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         states = original_input.clone()
 
         for sup_step in range(config.N_supervision):
+            # Zero out grad first
+            optimizer.zero_grad()
+
             # Forward pass
             states, logits = model.deep_recursion(
                 states=states,
@@ -58,7 +61,6 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
 
             # Backward pass
-            optimizer.zero_grad()
             loss.backward()
 
             # Gradient clipping
