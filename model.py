@@ -229,8 +229,8 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
         device_map="auto",
         attn_implementation="flash_attention_2",
     )
-    # for param in base_model.parameters():
-    #     param.requires_grad = False
+    for param in base_model.parameters():
+        param.requires_grad = False
     # for param in base_model.lm_head.parameters():
     #     param.requires_grad = True
 
@@ -239,7 +239,7 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
     new_config._attn_implementation = "flash_attention_2"
     print(f'the NEW config is {new_config}')
 
-    custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16)
+    custom_head = Qwen3RecurrentModule(new_config).to(device).to(torch.bfloat16) # type: ignore
     model = ModelWithRecurrentHead(base_model, custom_head).to(device)
 
     base_model_trainable_params = sum(p.numel() for p in model.base_model.parameters() if p.requires_grad)
