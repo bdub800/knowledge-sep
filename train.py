@@ -40,7 +40,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         original_input = base_outputs.last_hidden_state
         # output_states, latent_states = model.get_inits(input_ids)
 
-        states = original_input.clone()
+        states = original_input # initial states is output of base model
 
         for sup_step in range(config.N_supervision):
             # Zero out grad first
