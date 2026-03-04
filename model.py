@@ -195,12 +195,12 @@ class ModelWithRecurrentHead(nn.Module):
             logits: Output logits from piping output_states through the base LLM's lm head 
         """
         # Get hidden states from base model (before custom head)
-        with torch.no_grad():
-            for _ in range(T-1):
-                output_states, latent_states = self.latent_recursion(
-                    output_states, latent_states, original_input,
-                    attention_mask=attention_mask, n=n 
-                )
+        # with torch.no_grad():
+        #     for _ in range(T-1):
+        #         output_states, latent_states = self.latent_recursion(
+        #             output_states, latent_states, original_input,
+        #             attention_mask=attention_mask, n=n 
+        #         )
         
         output_states, latent_states = self.latent_recursion(
             output_states, latent_states, original_input,
@@ -227,8 +227,8 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
         device_map="auto",
         attn_implementation="flash_attention_2",
     )
-    for param in base_model.parameters():
-        param.requires_grad = False
+    # for param in base_model.parameters():
+    #     param.requires_grad = False
 
     print(f"Base model frozen. Trainable parameters: {sum(p.numel() for p in base_model.parameters() if p.requires_grad)}")
 

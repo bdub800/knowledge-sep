@@ -106,8 +106,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             for i in range(config.max_new_tokens):
                 # Get init states for current sequence length
                 output_states, latent_states = model.get_inits(generated_ids)
-                if getattr(config, 'verbose', False) and (i % 100 == 0):
-                    print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
+                # if getattr(config, 'verbose', False) and (i % 100 == 0):
+                #     print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
 
                 for sup_step in range(config.N_supervision):
                     output_states, latent_states, logits = model.deep_recursion(

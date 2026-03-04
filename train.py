@@ -29,17 +29,18 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         attention_mask = batch['attention_mask'].to(device)
         loss_mask = batch['loss_mask'].to(device)
 
-        # Get base model embeddings
-        base_outputs = model.base_model.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            use_cache=False,
-        )
-
-        original_input = base_outputs.last_hidden_state
+        # Randomly initialized states
         output_states, latent_states = model.get_inits(input_ids)
 
         for sup_step in range(config.N_supervision):
+            # Get base model embeddings
+            base_outputs = model.base_model.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+            )
+            original_input = base_outputs.last_hidden_state
+
             # Forward pass
             output_states, latent_states, logits = model.deep_recursion(
                 original_input=original_input,
@@ -54,7 +55,6 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
 
             # Backward pass
-            optimizer.zero_grad()
             loss.backward()
 
             # Gradient clipping
@@ -62,6 +62,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
             optimizer.step()
             scheduler.step()
+            optimizer.zero_grad()
 
             total_loss += loss.item()
             num_sub_batches += 1
