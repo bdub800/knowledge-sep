@@ -30,23 +30,22 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         attention_mask = batch['attention_mask'].to(device)
         loss_mask = batch['loss_mask'].to(device)
 
-        # Get base model embeddings
-        base_outputs = model.base_model.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            use_cache=False,
-        )
-
-        original_input = base_outputs.last_hidden_state
         # output_states, latent_states = model.get_inits(input_ids)
-
-        states = original_input # initial states is output of base model
+        states = model.get_inits(input_ids)
 
         for sup_step in range(config.N_supervision):
+            # Get base model embeddings
+            base_outputs = model.base_model.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+            )
+            original_input = base_outputs.last_hidden_state
+
             # Forward pass
             states, logits = model.deep_recursion(
                 states=states,
-                original_input=None,
+                original_input=original_input,
                 # output_states=output_states,
                 # latent_states=latent_states,
                 attention_mask=attention_mask,

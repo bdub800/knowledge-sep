@@ -104,17 +104,15 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             past_key_values = base_outputs.past_key_values
 
             for i in range(config.max_new_tokens):
-                # # Get init states for current sequence length
-                # output_states, latent_states = model.get_inits(generated_ids)
+                # Get init states for current sequence length
+                states = model.get_inits(generated_ids)
                 # if getattr(config, 'verbose', False) and (i % 100 == 0):
                 #     print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
-
-                states = original_input.clone()
 
                 for sup_step in range(config.N_supervision):
                     states, logits = model.deep_recursion(
                         states=states,
-                        original_input=None,
+                        original_input=original_input,
                         # output_states=output_states,
                         # latent_states=latent_states,
                         attention_mask=attention_mask,

@@ -137,18 +137,18 @@ class ModelWithRecurrentHead(nn.Module):
         self.base_model = base_model
         self.custom_head = custom_head
 
-        # # Random initialization math happens in fp32 but stored buffers are bf16
-        # hidden_size = base_model.config.hidden_size
-        # self.y_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
+        # Random initialization math happens in fp32 but stored buffers are bf16
+        hidden_size = base_model.config.hidden_size
+        self.y_init = nn.Parameter(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16))    
         # self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
 
-    # def get_inits(self, input_ids: torch.LongTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
-    #     # Expand initial states to match batch size and sequence length
-    #     # the states should have shape: (batch_size, seq_len, hidden_size)
-    #     batch_size, seq_len = input_ids.shape
-    #     output_init = self.y_init.expand(batch_size, seq_len, -1)
-    #     latent_init = self.z_init.expand(batch_size, seq_len, -1)
-    #     return output_init, latent_init
+    def get_inits(self, input_ids: torch.LongTensor):
+        # Expand initial states to match batch size and sequence length
+        # the states should have shape: (batch_size, seq_len, hidden_size)
+        batch_size, seq_len = input_ids.shape
+        output_init = self.y_init.expand(batch_size, seq_len, -1)
+        #latent_init = self.z_init.expand(batch_size, seq_len, -1)
+        return output_init #, latent_init
 
     # def latent_recursion(
     #     self,
