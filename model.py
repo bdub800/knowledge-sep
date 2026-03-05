@@ -137,10 +137,16 @@ class ModelWithRecurrentHead(nn.Module):
         self.base_model = base_model
         self.custom_head = custom_head
 
+        hidden_size = custom_head.config.hidden_size
+
         # Random initialization math happens in fp32 but stored buffers are bf16
-        hidden_size = base_model.config.hidden_size
-        self.y_init = nn.Parameter(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16))    
+        self.halting_probs = nn.Buffer(torch.zeros(1, dtype=torch.bfloat16), persistent=False)    
         # self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
+
+        self.halting_head = nn.Sequential(
+            nn.Linear(in_features=hidden_size, out_features=1),
+            nn.Sigmoid() 
+        ).to(torch.bfloat16)
 
     def get_inits(self, input_ids: torch.LongTensor):
         # Expand initial states to match batch size and sequence length
@@ -170,15 +176,15 @@ class ModelWithRecurrentHead(nn.Module):
         
     #     return output_states
     
-    def deep_recursion(
+    def deep_recursion_ACT(
         self,
         states: torch.FloatTensor,
-        original_input: torch.FloatTensor, # x
+        # original_input: torch.FloatTensor, # x
         # output_states: torch.FloatTensor, # y
         # latent_states: torch.FloatTensor, # z
         attention_mask: torch.Tensor,
-        n: int = 6,
-        T: int = 3,
+        max_steps: int = 18,
+        threshold: float = 0.9,
     ):
         """
         Forward pass: extract hidden states from base model and
@@ -202,15 +208,39 @@ class ModelWithRecurrentHead(nn.Module):
         #                 states=states, original_input=original_input, attention_mask=attention_mask
         #             )
         #             states = head_output.last_hidden_state
+
+        halting_probs = torch.zeros(states.size()[:2], device=states.device)
+        remainders = torch.zeros(states.size()[:2], device=states.device)
+        weighted_states = torch.zeros_like(states)
         
-        for _ in range(n+1):
+        for _ in range(max_steps):
+            # Calculate probs based on states
+            p = self.halting_head(states).squeeze(-1) # [batch, len]
+
+            # Masks
+            potentially_running = (halting_probs < 1.0).to(torch.bfloat16) # [batch, len]
+            newly_halted = ((halting_probs + p * potentially_running) > threshold) * potentially_running # [batch, len]
+            still_running = ((halting_probs + p * potentially_running) <= threshold) * potentially_running # [batch, len]
+
+            halting_probs += p * still_running # [batch, len]
+            remainders += newly_halted * (1 - halting_probs) # [batch, len]
+            halting_probs += newly_halted * remainders # [batch, len]
+
+            update_weights = (still_running * p + newly_halted * remainders).unsqueeze(-1) # [batch, len, 1]
+
             head_output = self.custom_head(
-                states=states, original_input=original_input, attention_mask=attention_mask
+                states=states, original_input=None, attention_mask=attention_mask
             )
             states = head_output.last_hidden_state
 
+            weighted_states = states * update_weights + weighted_states * (1 - update_weights)
+
+            # If all halted, then terminate early, with prompting masking
+            if (halting_probs >= 1.0).all():
+                break
+
         # input/output embeds might be tied here for Qwen3 dense models
-        logits = self.base_model.lm_head(states)
+        logits = self.base_model.lm_head(weighted_states)
 
         return states.detach(), logits
 
