@@ -73,6 +73,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
     accuracy = 0
     eval_data = []
     new_tokens = 0
+    total_loops = 0
     num_batches = 0
 
     progress_bar = tqdm(eval_loader, desc="Generating & Evaluating")
@@ -110,8 +111,9 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 # if getattr(config, 'verbose', False) and (i % 100 == 0):
                 #     print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
 
+                new_loops = 0
                 for sup_step in range(config.N_supervision):
-                    states, logits = model.deep_recursion_ACT(
+                    states, logits, n_loops = model.deep_recursion_ACT(
                         states=states,
                         # original_input=original_input,
                         # output_states=output_states,
@@ -120,7 +122,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                         n=config.n_latent_recursions,
                         # T=config.T_outer_loops,
                     )
-
+                    new_loops += n_loops
+                    
                 # Sample the next token
                 next_token_logits = logits[:, -1, :]
                 next_tokens = sample_tokens(next_token_logits, temperature=0.6, top_p=0.95, top_k=20, min_p=0.0)
@@ -129,7 +132,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
                 
                 new_tokens += 1
-
+                total_loops += new_loops
+                
                 if getattr(config, 'verbose', False):
                     if i == 0: # first new token, print prompt too
                         new_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
@@ -145,6 +149,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                         'correct': correct,
                         'total': total,
                         'new_tokens/sample': new_tokens,
+                        'new_loops': new_loops,
                     })
                 
                 # Mark sequences that generated EOS
@@ -209,11 +214,13 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             # Update progress bar after each batch
             accuracy = correct / total if total > 0 else 0
             num_batches += 1
+            avg_loops = total_loops / new_tokens if new_tokens > 0 else 0
             progress_bar.set_postfix({
                 'accuracy': f'{accuracy:.4f}',
                 'correct': correct,
                 'total': total,
                 'new_tokens/sample': new_tokens / num_batches,
+                'avg_loops/token': f'{avg_loops:.2f}',
             })
 
     eval_dict = {
@@ -221,6 +228,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
         'correct': correct,
         'total': total,
         'new_tokens/sample': new_tokens / num_batches,
+        'avg_loops/token': total_loops / new_tokens,
     }
     return eval_dict, eval_data
 

@@ -44,7 +44,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
         for sup_step in range(config.N_supervision):
             # Forward pass
-            states, logits = model.deep_recursion_ACT(
+            states, logits, n_loops = model.deep_recursion_ACT(
                 states=states,
                 # output_states=output_states,
                 # latent_states=latent_states,
@@ -91,6 +91,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 'train/avg_loss': avg_loss,
                 'train/avg_ending_loss': avg_ending_loss,
                 'train/lr': cur_lr,
+                f'train/n_loops_sup{sup_step}': n_loops,
             }, step=global_step)
             global_step += 1
 

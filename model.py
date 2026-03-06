@@ -218,7 +218,8 @@ class ModelWithRecurrentHead(nn.Module):
             halt_mask = (torch.arange(length, device=states.device) < (length - 1)).float()
             halt_mask = halt_mask.unsqueeze(0).expand(batch, -1)
 
-        for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
+        n_loops = 0
+        for step in range(n+1): # n+1 for compute invariance vs. previous runs
             # Calculate probs based on states
             p = torch.sigmoid(self.halting_head(states).squeeze(-1).float())  # [batch, len], float32
 
@@ -240,6 +241,8 @@ class ModelWithRecurrentHead(nn.Module):
 
             weighted_states = states * update_weights + weighted_states * (1 - update_weights)
 
+            n_loops += 1
+
             # If all halted, then terminate early, with prompting masking
             if ((halting_probs + halt_mask) >= threshold).all():
                 break
@@ -247,7 +250,7 @@ class ModelWithRecurrentHead(nn.Module):
         # input/output embeds might be tied here for Qwen3 dense models
         logits = self.base_model.lm_head(weighted_states.to(states.dtype))
 
-        return states.detach(), logits
+        return states.detach(), logits, n_loops
 
 def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device):
     # Load tokenizer and base model
@@ -327,7 +330,7 @@ def main():
     print('ORIGINAL INPUT --->')
     print(original_input)
 
-    _, logits = model.deep_recursion_ACT(
+    _, logits, _ = model.deep_recursion_ACT(
         states=original_input,
         attention_mask=model_inputs['attention_mask'],
     )
