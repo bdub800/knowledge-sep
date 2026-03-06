@@ -181,7 +181,8 @@ class ModelWithRecurrentHead(nn.Module):
         attention_mask: torch.Tensor,
         halt_mask: Optional[torch.Tensor] = None,
         n: int = 6,
-        threshold: float = 0.9,
+        threshold: float = 0.99,
+        delta: float = 1e-6, # for rounding errors on halting probabilties
     ):
         """
         Forward pass: extract hidden states from base model and
@@ -222,7 +223,7 @@ class ModelWithRecurrentHead(nn.Module):
             p = torch.sigmoid(self.halting_head(states).squeeze(-1).float())  # [batch, len], float32
 
             # Masks
-            potentially_running = (halting_probs < 1.0) # [batch, len]
+            potentially_running = halting_probs < (1.0 - delta) # [batch, len]
             newly_halted = ((halting_probs + p * potentially_running) > threshold) * potentially_running # [batch, len]
             still_running = ((halting_probs + p * potentially_running) <= threshold) * potentially_running # [batch, len]
 
@@ -240,7 +241,7 @@ class ModelWithRecurrentHead(nn.Module):
             weighted_states = states * update_weights + weighted_states * (1 - update_weights)
 
             # If all halted, then terminate early, with prompting masking
-            if ((halting_probs + halt_mask) >= 1.0).all():
+            if ((halting_probs + halt_mask) >= threshold).all():
                 break
 
         # input/output embeds might be tied here for Qwen3 dense models
