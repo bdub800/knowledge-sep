@@ -95,10 +95,20 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samp
         loss_mask = attn_mask_whole.clone()
         loss_mask[mask] = 0
 
+        # Start shifting for LM training
+        input_ids = tokenized['input_ids'][..., :-1].contiguous()
+        attention_mask = tokenized['attention_mask'][..., :-1].contiguous()
+        labels = tokenized['input_ids'][..., 1:].clone().contiguous()
+        loss_mask = loss_mask[..., 1:].contiguous()
+        halt_mask = 1 - loss_mask
+
+
         return {
-            'input_ids': tokenized['input_ids'],
-            'attention_mask': tokenized['attention_mask'],
-            'loss_mask': loss_mask
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels,
+            'loss_mask': loss_mask,
+            'halt_mask': halt_mask,
         }
 
     return DataLoader(

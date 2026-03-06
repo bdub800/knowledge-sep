@@ -8,7 +8,7 @@ import wandb
 from model import instantiate_model
 from data import get_dataloader, get_generation_dataloader
 from eval import evaluate, evaluate_generation
-from loss import compute_shift_lm_loss
+from loss import compute_lm_loss
 
 
 def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, config, global_step=0):
@@ -28,7 +28,9 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
         # Move batch to device
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
+        labels = batch['labels'].to(device)
         loss_mask = batch['loss_mask'].to(device)
+        halt_mask = batch['halt_mask'].to(device)
 
         # output_states, latent_states = model.get_inits(input_ids)
         states = model.get_inits(input_ids)
@@ -40,21 +42,20 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 attention_mask=attention_mask,
                 use_cache=False,
             )
-            original_input = base_outputs.last_hidden_state
+            states = base_outputs.last_hidden_state
 
             # Forward pass
-            states, logits = model.deep_recursion(
+            states, logits = model.deep_recursion_ACT(
                 states=states,
-                original_input=original_input,
                 # output_states=output_states,
                 # latent_states=latent_states,
                 attention_mask=attention_mask,
+                halt_mask=halt_mask,
                 n=config.n_latent_recursions,
-                T=config.T_outer_loops,
+                # T=config.T_outer_loops,
             )
 
-            labels = input_ids.clone()
-            loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
+            loss = compute_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
 
             # Backward pass
             loss.backward()
@@ -123,9 +124,9 @@ def main():
                         help='Number of layers in recurrent module')
     parser.add_argument('--n_latent_recursions', type=int, default=6,
                         help='Number of latent recursions (n parameter)')
-    parser.add_argument('--T_outer_loops', type=int, default=3,
-                        help='Number of outer loops (T parameter)')
-    parser.add_argument('--N_supervision', type=int, default=8,
+    # parser.add_argument('--T_outer_loops', type=int, default=3,
+    #                     help='Number of outer loops (T parameter)')
+    parser.add_argument('--N_supervision', type=int, default=1,
                         help='Number of deep supervision steps')
 
     # Training arguments

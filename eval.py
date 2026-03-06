@@ -105,19 +105,20 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
             for i in range(config.max_new_tokens):
                 # Get init states for current sequence length
-                states = model.get_inits(generated_ids)
+                # states = model.get_inits(generated_ids)
+                states = original_input
                 # if getattr(config, 'verbose', False) and (i % 100 == 0):
                 #     print(f'output states shape {output_states.shape}; latent states shape {latent_states.shape}')
 
                 for sup_step in range(config.N_supervision):
-                    states, logits = model.deep_recursion(
+                    states, logits = model.deep_recursion_ACT(
                         states=states,
-                        original_input=original_input,
+                        # original_input=original_input,
                         # output_states=output_states,
                         # latent_states=latent_states,
                         attention_mask=attention_mask,
                         n=config.n_latent_recursions,
-                        T=config.T_outer_loops,
+                        # T=config.T_outer_loops,
                     )
 
                 # Sample the next token
@@ -279,7 +280,7 @@ def main():
     args.num_recurrent_layers = train_config.num_recurrent_layers
     # args.N_supervision = train_config.N_supervision
     args.n_latent_recursions = train_config.n_latent_recursions
-    args.T_outer_loops = train_config.T_outer_loops
+    # args.T_outer_loops = train_config.T_outer_loops
 
     tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
 

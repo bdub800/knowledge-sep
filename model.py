@@ -16,7 +16,7 @@ from transformers.masking_utils import create_causal_mask, create_sliding_window
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from utils import trunc_normal_init_
-from loss import compute_shift_lm_loss
+from loss import compute_lm_loss
 
 
 class Qwen3RecurrentModule(nn.Module):
@@ -139,22 +139,18 @@ class ModelWithRecurrentHead(nn.Module):
 
         hidden_size = custom_head.config.hidden_size
 
-        # Random initialization math happens in fp32 but stored buffers are bf16
-        self.halting_probs = nn.Buffer(torch.zeros(1, dtype=torch.bfloat16), persistent=False)    
+        # Random initialization math happens in fp32 but stored buffers are bf16 
         # self.z_init = nn.Buffer(trunc_normal_init_(torch.empty(hidden_size, dtype=torch.float32), std=1).to(torch.bfloat16), persistent=True)
 
-        self.halting_head = nn.Sequential(
-            nn.Linear(in_features=hidden_size, out_features=1),
-            nn.Sigmoid() 
-        ).to(torch.bfloat16)
+        self.halting_head = nn.Linear(in_features=hidden_size, out_features=1).to(torch.bfloat16)
 
-    def get_inits(self, input_ids: torch.LongTensor):
-        # Expand initial states to match batch size and sequence length
-        # the states should have shape: (batch_size, seq_len, hidden_size)
-        batch_size, seq_len = input_ids.shape
-        output_init = self.y_init.expand(batch_size, seq_len, -1)
-        #latent_init = self.z_init.expand(batch_size, seq_len, -1)
-        return output_init #, latent_init
+    # def get_inits(self, input_ids: torch.LongTensor):
+    #     # Expand initial states to match batch size and sequence length
+    #     # the states should have shape: (batch_size, seq_len, hidden_size)
+    #     batch_size, seq_len = input_ids.shape
+    #     output_init = self.y_init.expand(batch_size, seq_len, -1)
+    #     #latent_init = self.z_init.expand(batch_size, seq_len, -1)
+    #     return output_init #, latent_init
 
     # def latent_recursion(
     #     self,
@@ -183,7 +179,8 @@ class ModelWithRecurrentHead(nn.Module):
         # output_states: torch.FloatTensor, # y
         # latent_states: torch.FloatTensor, # z
         attention_mask: torch.Tensor,
-        max_steps: int = 18,
+        halt_mask: Optional[torch.Tensor] = None,
+        n: int = 6,
         threshold: float = 0.9,
     ):
         """
@@ -208,17 +205,24 @@ class ModelWithRecurrentHead(nn.Module):
         #                 states=states, original_input=original_input, attention_mask=attention_mask
         #             )
         #             states = head_output.last_hidden_state
-
-        halting_probs = torch.zeros(states.size()[:2], device=states.device)
-        remainders = torch.zeros(states.size()[:2], device=states.device)
-        weighted_states = torch.zeros_like(states)
         
-        for _ in range(max_steps):
+        batch, length, _ = states.size()
+        # ACT accumulation in higher precision
+        halting_probs = torch.zeros((batch, length), device=states.device, dtype=torch.float32)
+        remainders = torch.zeros((batch, length), device=states.device, dtype=torch.float32)
+        weighted_states = torch.zeros_like(states, dtype=torch.float32)
+
+        # For auto-regressive generation we only care about the pred at last position
+        if halt_mask is None:
+            halt_mask = (torch.arange(length, device=states.device) < (length - 1)).float()
+            halt_mask = halt_mask.unsqueeze(0).expand(batch, -1)
+
+        for _ in range(n+1): # n+1 for compute invariance vs. previous runs 
             # Calculate probs based on states
-            p = self.halting_head(states).squeeze(-1) # [batch, len]
+            p = torch.sigmoid(self.halting_head(states).squeeze(-1).float())  # [batch, len], float32
 
             # Masks
-            potentially_running = (halting_probs < 1.0).to(torch.bfloat16) # [batch, len]
+            potentially_running = (halting_probs < 1.0) # [batch, len]
             newly_halted = ((halting_probs + p * potentially_running) > threshold) * potentially_running # [batch, len]
             still_running = ((halting_probs + p * potentially_running) <= threshold) * potentially_running # [batch, len]
 
@@ -236,11 +240,11 @@ class ModelWithRecurrentHead(nn.Module):
             weighted_states = states * update_weights + weighted_states * (1 - update_weights)
 
             # If all halted, then terminate early, with prompting masking
-            if (halting_probs >= 1.0).all():
+            if ((halting_probs + halt_mask) >= 1.0).all():
                 break
 
         # input/output embeds might be tied here for Qwen3 dense models
-        logits = self.base_model.lm_head(weighted_states)
+        logits = self.base_model.lm_head(weighted_states.to(states.dtype))
 
         return states.detach(), logits
 
@@ -304,7 +308,7 @@ def main():
         tokenize=False,
         add_generation_prompt=True,
     )
-    print('INPUT TEXT IS >> ' + text)
+    print('DEBUG: input text is >> ' + text)
 
     model_inputs = tokenizer([text], return_tensors="pt")
     model_inputs = {k: v.to(device) for k, v in model_inputs.items()}
@@ -322,22 +326,15 @@ def main():
     print('ORIGINAL INPUT --->')
     print(original_input)
 
-    states = original_input.clone()
-
-    _, logits = model.deep_recursion(
-        states,
-        original_input,
-        attention_mask=model_inputs['attention_mask']
+    _, logits = model.deep_recursion_ACT(
+        states=original_input,
+        attention_mask=model_inputs['attention_mask'],
     )
     print('logits --->')
     print(logits)
-
-    labels = model_inputs['input_ids']
-    loss = compute_shift_lm_loss(logits, labels, model.base_model.config.vocab_size)
     
     indices = torch.argmax(logits, dim=-1)
     print(f'RESULT is >> {indices}')
-    print(f'LOSS is >> {loss}')
     print(f'DECODES to >> {tokenizer.batch_decode(indices)}')
 
 if __name__ == "__main__":
