@@ -94,6 +94,9 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             # Track which sequences have finished (generated EOS)
             finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
+            # Track number of recurrent steps used for each new token generated
+            n_updates_new_tokens = torch.zeros((batch_size, 1), device='cpu')
+
             # Initial base model forward pass on full prompt with KV caching
             base_outputs = model.base_model.model(
                 input_ids=generated_ids,
@@ -113,7 +116,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
 
                 new_loops = 0
                 for sup_step in range(config.N_supervision):
-                    states, logits, n_loops = model.deep_recursion_ACT(
+                    states, logits, n_loops, n_updates = model.deep_recursion_ACT(
                         states=states,
                         # original_input=original_input,
                         # output_states=output_states,
@@ -133,6 +136,13 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 
                 new_tokens += 1
                 total_loops += new_loops
+
+                # Record the num of recurrent steps for just generated tokens
+                new_token_updates = n_updates[:, -1].unsqueeze(-1).cpu()
+                if i == 0: # first new token
+                    n_updates_new_tokens += new_token_updates
+                else:
+                    n_updates_new_tokens = torch.cat([n_updates_new_tokens, new_token_updates], dim=-1)
                 
                 if getattr(config, 'verbose', False):
                     if i == 0: # first new token, print prompt too
@@ -184,9 +194,9 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             for i in range(batch_size):
                 # Extract the answer (remove the prompt)
                 if generated_texts[i].startswith(prompt_texts[i]):
-                    generated_answer = generated_texts[i][len(prompt_texts[i]):].strip()
+                    generated_answer = generated_texts[i][len(prompt_texts[i]):]
                 else:
-                    generated_answer = generated_texts[i].strip()
+                    generated_answer = generated_texts[i]
 
                 final_answer, thinking = process_answer(tokenizer, generated_answer)
 
@@ -204,7 +214,8 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     'thinking': thinking,
                     'final_answer': final_answer,
                     'is_match': is_match,
-                    'ground_truth': ground_truths[i]
+                    'ground_truth': ground_truths[i],
+                    'new_updates': n_updates_new_tokens[i].numpy().astype('int'),
                 })
 
                 if hasattr(config, "save_eval_interval") and config.save_eval_interval > 0:

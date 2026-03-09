@@ -211,6 +211,7 @@ class ModelWithRecurrentHead(nn.Module):
         # ACT accumulation in higher precision
         halting_probs = torch.zeros((batch, length), device=states.device, dtype=torch.float32)
         remainders = torch.zeros((batch, length), device=states.device, dtype=torch.float32)
+        n_updates = torch.zeros((batch, length), device=states.device, dtype=torch.int32)
         weighted_states = torch.zeros_like(states, dtype=torch.float32)
 
         # For auto-regressive generation we only care about the pred at last position
@@ -232,25 +233,28 @@ class ModelWithRecurrentHead(nn.Module):
             remainders += newly_halted * (1 - halting_probs) # [batch, len]
             halting_probs += newly_halted * remainders # [batch, len]
 
+            n_updates += still_running + newly_halted
+
             update_weights = (still_running * p + newly_halted * remainders).unsqueeze(-1) # [batch, len, 1]
+            # states used in update same as states used to compute probs
+            weighted_states = states * update_weights + weighted_states * (1 - update_weights)
+
+            # Could happen that it halts while not going into the recurrent head even once
+            # If all halted, then terminate early, with prompting masking
+            if ((halting_probs + halt_mask) >= threshold).all():
+                break
 
             head_output = self.custom_head(
                 states=states, original_input=None, attention_mask=attention_mask
             )
             states = head_output.last_hidden_state
 
-            weighted_states = states * update_weights + weighted_states * (1 - update_weights)
-
             n_loops += 1
-
-            # If all halted, then terminate early, with prompting masking
-            if ((halting_probs + halt_mask) >= threshold).all():
-                break
 
         # input/output embeds might be tied here for Qwen3 dense models
         logits = self.base_model.lm_head(weighted_states.to(states.dtype))
 
-        return states.detach(), logits, n_loops
+        return states.detach(), logits, n_loops, n_updates.detach()
 
 def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device):
     # Load tokenizer and base model
@@ -330,7 +334,7 @@ def main():
     print('ORIGINAL INPUT --->')
     print(original_input)
 
-    _, logits, _ = model.deep_recursion_ACT(
+    _, logits, _, _ = model.deep_recursion_ACT(
         states=original_input,
         attention_mask=model_inputs['attention_mask'],
     )

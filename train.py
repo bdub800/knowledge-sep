@@ -44,7 +44,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
         for sup_step in range(config.N_supervision):
             # Forward pass
-            states, logits, n_loops = model.deep_recursion_ACT(
+            states, logits, n_loops, n_updates = model.deep_recursion_ACT(
                 states=states,
                 # output_states=output_states,
                 # latent_states=latent_states,
@@ -80,19 +80,26 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             # Update progress bar
             progress_bar.set_postfix({
                 f'loss_sup{sup_step}': loss.item(),
+                f'n_loops_sup{sup_step}': n_loops,
                 'avg_loss': avg_loss,
                 'avg_ending_loss': avg_ending_loss,
                 'lr': cur_lr,
                 'num_batches': num_batches,
             })
 
+            n_updates_np = n_updates.cpu().numpy()
             wandb.log({
                 f'train/loss_sup{sup_step}': loss.item(),
                 'train/avg_loss': avg_loss,
                 'train/avg_ending_loss': avg_ending_loss,
                 'train/lr': cur_lr,
                 f'train/n_loops_sup{sup_step}': n_loops,
+                f'train/n_updates_max_sup{sup_step}': n_updates_np.max(),
+                f'train/n_updates_min_sup{sup_step}': n_updates_np.min(),
+                f'train/n_updates_mean_sup{sup_step}': n_updates_np.mean(),
+                f'train/n_updates_hist_sup{sup_step}': wandb.Histogram(n_updates_np),
             }, step=global_step)
+            
             global_step += 1
 
         if num_batches % config.eval_freq == 0:
