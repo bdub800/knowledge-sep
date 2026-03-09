@@ -97,7 +97,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 f'train/n_updates_max_sup{sup_step}': n_updates_np.max(),
                 f'train/n_updates_min_sup{sup_step}': n_updates_np.min(),
                 f'train/n_updates_mean_sup{sup_step}': n_updates_np.mean(),
-                f'train/n_updates_hist_sup{sup_step}': wandb.Histogram(n_updates_np),
+                f'train/n_updates_hist_sup{sup_step}': wandb.Histogram(n_updates_np.flatten()),
             }, step=global_step)
             
             global_step += 1
