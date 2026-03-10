@@ -22,7 +22,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
     progress_bar = tqdm(train_loader, desc="Training")
 
     # Create a wandb table with INCREMENTAL logging mode
-    incr_table = wandb.Table(columns=INCR_TABLE_COLS, log_mode="INCREMENTAL")
+    incr_table = wandb.Table(columns=['step'] + INCR_TABLE_COLS, log_mode="INCREMENTAL")
 
     for batch in progress_bar:
         # Move batch to device

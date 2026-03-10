@@ -13,8 +13,7 @@ from utils import sample_tokens, process_answer
 torch.serialization.add_safe_globals([argparse.Namespace])
 
 INCR_TABLE_COLS = [
-    'step', 'id', 'prompt',
-    'generated_answer', 'thinking',
+    'id', 'prompt', 'generated_answer', 'thinking',
     'final_answer', 'is_match', 'ground_truth',
 ]
 
