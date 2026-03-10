@@ -7,7 +7,7 @@ import wandb
 
 from model import instantiate_model
 from data import get_dataloader, get_generation_dataloader
-from eval import evaluate, evaluate_generation
+from eval import evaluate, evaluate_generation, INCR_TABLE_COLS
 from loss import compute_lm_loss
 
 
@@ -22,7 +22,7 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
     progress_bar = tqdm(train_loader, desc="Training")
 
     # Create a wandb table with INCREMENTAL logging mode
-    incr_table = None
+    incr_table = wandb.Table(columns=INCR_TABLE_COLS, log_mode="INCREMENTAL")
 
     for batch in progress_bar:
         # Move batch to device
@@ -108,12 +108,9 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             wandb.log({
                 f'eval/overview/{k}': v for k, v in eval_dict.items()
             }, step=global_step)
-
-            if incr_table is None:
-                columns = ['step'] + list(eval_data[0].keys())
-                incr_table = wandb.Table(columns=columns, log_mode="INCREMENTAL")
+                
             for row in eval_data:
-                incr_table.add_data(global_step, *[row[c] for c in eval_data[0].keys()])
+                incr_table.add_data(global_step, *[row[c] for c in INCR_TABLE_COLS])
             wandb.log({'eval/samples_table': incr_table}, step=global_step)
 
             model.train()
