@@ -85,8 +85,8 @@ def process_answer(tokenizer, generated_answer: str) -> Tuple[str, str]:
     before_eos = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
     split_by_end_think = before_eos.split('</think>')
     if len(split_by_end_think) == 1:
-        thinking = split_by_end_think[0]
-        final_answer = split_by_end_think[0]
+        thinking = ''
+        final_answer = split_by_end_think[0].strip()
     else:
         # part before last </think> token
         thinking = '</think>'.join(split_by_end_think[:-1])
@@ -99,7 +99,7 @@ def process_answer(tokenizer, generated_answer: str) -> Tuple[str, str]:
     boxed_match = re.search(BOXED_REGEX_OPTIONAL_FINAL_ANSWER, final_answer, re.IGNORECASE)
     if boxed_match:
         final_answer = boxed_match.group(1).strip()
-    else:
+    elif thinking:
         boxed_match = re.search(BOXED_REGEX_REQUIRE_FINAL_ANSWER, thinking, re.IGNORECASE)
         if boxed_match:
             final_answer = boxed_match.group(1).strip()
