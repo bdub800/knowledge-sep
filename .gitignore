@@ -12,3 +12,4 @@ wheels/
 
 # Jupyter notebooks related
 .ipynb_checkpoints/
+*.ipynb
