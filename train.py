@@ -60,7 +60,8 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
             loss.backward()
 
             # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+            if config.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
 
             optimizer.step()
             scheduler.step()
