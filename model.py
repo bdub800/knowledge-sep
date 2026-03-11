@@ -219,7 +219,6 @@ class ModelWithRecurrentHead(nn.Module):
             halt_mask = (torch.arange(length, device=states.device) < (length - 1)).float()
             halt_mask = halt_mask.unsqueeze(0).expand(batch, -1)
 
-        n_loops = 0
         for step in range(n+1): # n+1 for compute invariance vs. previous runs
             # Calculate probs based on states
             p = torch.sigmoid(self.halting_head(states).squeeze(-1).float())  # [batch, len], float32
@@ -249,12 +248,10 @@ class ModelWithRecurrentHead(nn.Module):
             )
             states = head_output.last_hidden_state
 
-            n_loops += 1
-
         # input/output embeds might be tied here for Qwen3 dense models
         logits = self.base_model.lm_head(weighted_states.to(states.dtype))
 
-        return states.detach(), logits, n_loops, n_updates.detach()
+        return states.detach(), logits, step, n_updates.detach()
 
 def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device):
     # Load tokenizer and base model
