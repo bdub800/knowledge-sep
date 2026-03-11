@@ -239,8 +239,8 @@ class ModelWithRecurrentHead(nn.Module):
             # states used in update same as states used to compute probs
             weighted_states = states * update_weights + weighted_states * (1 - update_weights)
 
-            # Could happen that it halts while not going into the recurrent head even once
-            # If all halted, then terminate early, with prompting masking
+            # Could happen that it halts while not having gone into the recurrent head even once
+            # If all halted, then terminate early, with prompt and pad tokens excluded
             if ((halting_probs + halt_mask) >= threshold).all():
                 break
 

@@ -90,7 +90,7 @@ def get_dataloader(tokenizer, max_length, batch_size, seed, train=True, num_samp
         lengths = tokenized_prompts['attention_mask'].sum(dim=-1)
         # Mask out the loss on prompt tokens, prompt tokens should not be prediction targets
         col_indices = torch.arange(attn_mask_whole.size(1)).unsqueeze(0)
-        mask = col_indices < lengths.unsqueeze(1) # no need for lengths - 1 here because loss mask shifted later in compute loss
+        mask = col_indices < lengths.unsqueeze(1)
         loss_mask = attn_mask_whole.clone()
         loss_mask[mask] = 0
 
