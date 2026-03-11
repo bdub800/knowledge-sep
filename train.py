@@ -137,14 +137,17 @@ def main():
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=8,
                         help='Training batch size')
-    parser.add_argument('--eval_batch_size', type=int, default=2,
+    parser.add_argument('--eval_batch_size', type=int, default=8,
                         help='Evaluation batch size')
     parser.add_argument('--max_new_tokens', type=int, default=256,
                         help='Max new tokens to generate during generation eval')
     parser.add_argument('--num_epochs', type=int, default=1,
                         help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=2e-5,
-                        help='Learning rate')
+                        help='Peak learning rate')
+    parser.add_argument('--lr_schedule', type=str, default='linear_with_warmup',
+                        choices=['constant', 'linear_with_warmup'],
+                        help='Learning rate schedule type')
     parser.add_argument('--warmup_steps', type=int, default=100,
                         help='Number of warmup steps')
     parser.add_argument('--max_grad_norm', type=float, default=1.0,
@@ -157,7 +160,7 @@ def main():
     # Dataset arguments
     parser.add_argument('--num_train_samples', type=int, default=None,
                         help='Number of training samples (None for all)')
-    parser.add_argument('--num_eval_samples', type=int, default=2,
+    parser.add_argument('--num_eval_samples', type=int, default=8,
                         help='Number of evaluation samples (None for all)')
     parser.add_argument('--enable_cot', type=str, default='standard',
                         choices=['standard', 'after_scratch_pad', 'none_at_all'],
@@ -232,13 +235,17 @@ def main():
     )
 
     # Hard code for now... for LR schedule
-    num_training_steps = (7473 // args.batch_size) * args.N_supervision * args.num_epochs
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=args.warmup_steps,
-        num_training_steps=num_training_steps,
-    )
-    # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    if args.lr_schedule == 'constant':
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    elif args.lr_schedule == 'linear_with_warmup':
+        num_training_steps = (7473 // args.batch_size) * args.N_supervision * args.num_epochs
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=args.warmup_steps,
+            num_training_steps=num_training_steps,
+        )
+    else:
+        raise ValueError('Does not recognize scheduler type!')
 
     # Create save directory
     os.makedirs(args.save_dir, exist_ok=True)
