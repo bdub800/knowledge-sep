@@ -231,13 +231,13 @@ def main():
     )
 
     # Hard code for now... for LR schedule
-    # num_training_steps = (7473 // args.batch_size) * args.N_supervision * args.num_epochs
-    # scheduler = get_linear_schedule_with_warmup(
-    #     optimizer,
-    #     num_warmup_steps=args.warmup_steps,
-    #     num_training_steps=num_training_steps,
-    # )
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    num_training_steps = (7473 // args.batch_size) * args.N_supervision * args.num_epochs
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=args.warmup_steps,
+        num_training_steps=num_training_steps,
+    )
+    # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
 
     # Create save directory
     os.makedirs(args.save_dir, exist_ok=True)
