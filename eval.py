@@ -17,46 +17,6 @@ INCR_TABLE_COLS = [
     'final_answer', 'is_match', 'ground_truth',
 ]
 
-def evaluate(model, eval_loader, device, config):
-    """Evaluate the model."""
-    model.eval()
-    total_loss = 0
-    num_batches = 0
-
-    progress_bar = tqdm(eval_loader, desc="Evaluating")
-
-    with torch.no_grad():
-        for batch in progress_bar:
-            # Move batch to device
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-
-            output_states, latent_states = model.get_inits(input_ids)
-
-            loss = None
-            for sup_step in range(config.N_supervision):
-                # Forward pass
-                output_states, latent_states, _, loss = model(
-                    output_states=output_states,
-                    latent_states=latent_states,
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    labels=input_ids,
-                    n=config.n_latent_recursions,
-                    T=config.T_outer_loops,
-                )
-
-            # Only record loss from the last supervision step
-            if loss is not None:
-                total_loss += loss.item()
-                num_batches += 1
-
-                progress_bar.set_postfix({'loss': total_loss / num_batches})
-
-    avg_loss = total_loss / num_batches
-    return avg_loss
-
-
 def evaluate_generation(model, tokenizer, eval_loader, device, config):
     """
     Evaluate the model by generating answers from questions and comparing to ground truth.
