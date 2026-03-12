@@ -253,7 +253,7 @@ class ModelWithRecurrentHead(nn.Module):
 
         return states.detach(), logits, step, n_updates.detach()
 
-def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device):
+def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device, freeze_base: bool = False):
     # Load tokenizer and base model
     print(f"Loading base model: {base_model_name}")
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
@@ -268,10 +268,12 @@ def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: t
         device_map="auto",
         attn_implementation="flash_attention_2",
     )
-    for param in base_model.parameters():
-        param.requires_grad = False
-    for param in base_model.lm_head.parameters():
-        param.requires_grad = True
+
+    if freeze_base:
+        for param in base_model.parameters():
+            param.requires_grad = False
+        for param in base_model.lm_head.parameters():
+            param.requires_grad = True
 
     new_config = copy.deepcopy(base_model.config)
     new_config.num_hidden_layers = num_recurrent_layers

@@ -156,6 +156,8 @@ def main():
                         help='Maximum sequence length')
     parser.add_argument('--eval_freq', type=int, default=100,
                         help='Do eval every x batches')
+    parser.add_argument('--freeze_base', action='store_true',
+                        help='Freeze the params of base model except for the lm_head')
 
     # Dataset arguments
     parser.add_argument('--num_train_samples', type=int, default=None,
@@ -210,12 +212,12 @@ def main():
         # args.n_latent_recursions = train_config.n_latent_recursions
         # args.T_outer_loops = train_config.T_outer_loops
 
-        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
+        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
         model.load_state_dict(checkpoint['model_state_dict'])
         print("Checkpoint loaded successfully.")
     
     else:
-        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
+        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
 
     train_loader = get_dataloader(
         tokenizer, args.max_length, args.batch_size,
