@@ -115,17 +115,19 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             for i in range(config.max_new_tokens):
                 states = original_input
                 new_loops = 0
-                for sup_step in range(config.N_supervision):
-                    states, logits, n_loops, n_updates = model.deep_recursion_ACT(
-                        states=states,
-                        # original_input=original_input,
-                        # output_states=output_states,
-                        # latent_states=latent_states,
-                        attention_mask=attention_mask,
-                        n=config.n_latent_recursions,
-                        # T=config.T_outer_loops,
-                    )
-                    new_loops += n_loops
+                # for sup_step in range(config.N_supervision):
+                #     states, logits, n_loops, n_updates = model.deep_recursion_ACT(
+                #         states=states,
+                #         # original_input=original_input,
+                #         # output_states=output_states,
+                #         # latent_states=latent_states,
+                #         attention_mask=attention_mask,
+                #         n=config.n_latent_recursions,
+                #         # T=config.T_outer_loops,
+                #     )
+                #     new_loops += n_loops
+
+                logits = model.base_model.lm_head(states)
                     
                 # Sample the next token
                 next_token_logits = logits[:, -1, :]
@@ -138,11 +140,11 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 total_loops += new_loops
 
                 # Record the num of recurrent steps for just generated tokens
-                new_token_updates = n_updates[:, -1].unsqueeze(-1).cpu()
-                if i == 0: # first new token
-                    n_updates_new_tokens += new_token_updates
-                else:
-                    n_updates_new_tokens = torch.cat([n_updates_new_tokens, new_token_updates], dim=-1)
+                # new_token_updates = n_updates[:, -1].unsqueeze(-1).cpu()
+                # if i == 0: # first new token
+                #     n_updates_new_tokens += new_token_updates
+                # else:
+                #     n_updates_new_tokens = torch.cat([n_updates_new_tokens, new_token_updates], dim=-1)
                 
                 if getattr(config, 'verbose', False):
                     if i == 0: # first new token, print prompt too
@@ -158,7 +160,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                         'accuracy': f'{accuracy:.4f}',
                         'correct': correct,
                         'total': total,
-                        'new_tokens/sample': new_tokens,
+                        'new_tokens_iters': new_tokens,
                         'new_loops': new_loops,
                     })
                 
@@ -290,22 +292,24 @@ def main():
     print(f"Using device: {device}")
 
     # Load checkpoint and rebuild model
-    print(f"Loading checkpoint: {args.ckpt_path}")
-    checkpoint = torch.load(args.ckpt_path, map_location=device)
-    train_config = checkpoint['config']
+    # print(f"Loading checkpoint: {args.ckpt_path}")
+    # checkpoint = torch.load(args.ckpt_path, map_location=device)
+    # train_config = checkpoint['config']
 
-    # Use training config for model hyperparams if not overridden
-    args.base_model = train_config.base_model
-    args.num_recurrent_layers = train_config.num_recurrent_layers
-    # args.N_supervision = train_config.N_supervision
-    args.n_latent_recursions = train_config.n_latent_recursions
-    # args.T_outer_loops = train_config.T_outer_loops
-    args.freeze_base = train_config.freeze_base
+    # # Use training config for model hyperparams if not overridden
+    # args.base_model = train_config.base_model
+    # args.num_recurrent_layers = train_config.num_recurrent_layers
+    # # args.N_supervision = train_config.N_supervision
+    # args.n_latent_recursions = train_config.n_latent_recursions
+    # # args.T_outer_loops = train_config.T_outer_loops
+    # args.freeze_base = train_config.freeze_base
 
-    tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
+    args.base_model = 'Qwen/Qwen3-0.6B'
+    args.num_recurrent_layers = 1
+    tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device)
 
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print("Checkpoint loaded successfully.")
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # print("Checkpoint loaded successfully.")
     
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,

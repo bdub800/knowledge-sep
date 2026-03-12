@@ -44,15 +44,18 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
 
         for sup_step in range(config.N_supervision):
             # Forward pass
-            states, logits, n_loops, n_updates = model.deep_recursion_ACT(
-                states=states,
-                # output_states=output_states,
-                # latent_states=latent_states,
-                attention_mask=attention_mask,
-                halt_mask=halt_mask,
-                n=config.n_latent_recursions,
-                # T=config.T_outer_loops,
-            )
+            # states, logits, n_loops, n_updates = model.deep_recursion_ACT(
+            #     states=states,
+            #     # output_states=output_states,
+            #     # latent_states=latent_states,
+            #     attention_mask=attention_mask,
+            #     halt_mask=halt_mask,
+            #     n=config.n_latent_recursions,
+            #     # T=config.T_outer_loops,
+            # )
+            n_loops = 0
+
+            logits = model.base_model.lm_head(states)
 
             loss = compute_lm_loss(logits, labels, model.base_model.config.vocab_size, loss_mask=loss_mask)
 
@@ -88,17 +91,17 @@ def train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, schedule
                 'num_batches': num_batches,
             })
 
-            n_updates_np = n_updates.cpu().numpy()
+            # n_updates_np = n_updates.cpu().numpy()
             wandb.log({
                 f'train/loss_sup{sup_step}': loss.item(),
                 'train/avg_loss': avg_loss,
                 'train/avg_ending_loss': avg_ending_loss,
                 'train/lr': cur_lr,
                 f'train/n_loops_sup{sup_step}': n_loops,
-                f'train/n_updates_max_sup{sup_step}': n_updates_np.max(),
-                f'train/n_updates_min_sup{sup_step}': n_updates_np.min(),
-                f'train/n_updates_mean_sup{sup_step}': n_updates_np.mean(),
-                f'train/n_updates_hist_sup{sup_step}': wandb.Histogram(n_updates_np.flatten()),
+                # f'train/n_updates_max_sup{sup_step}': n_updates_np.max(),
+                # f'train/n_updates_min_sup{sup_step}': n_updates_np.min(),
+                # f'train/n_updates_mean_sup{sup_step}': n_updates_np.mean(),
+                # f'train/n_updates_hist_sup{sup_step}': wandb.Histogram(n_updates_np.flatten()),
             }, step=global_step)
             
             global_step += 1
