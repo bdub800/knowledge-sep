@@ -104,3 +104,19 @@ def process_answer(tokenizer, generated_answer: str) -> Tuple[str, str]:
         if boxed_match:
             final_answer = boxed_match.group(1).strip()
     return final_answer, thinking
+
+def process_answer_base(tokenizer, generated_answer: str) -> Tuple[str, str]:
+    # Cut off parts after EOS token
+    before_eos = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
+    split_by_end_think = before_eos.split('</think>')
+    # part before last </think> token
+    thinking = '</think>'.join(split_by_end_think[:-1])
+    # part after last </think> token
+    final_answer = split_by_end_think[-1].strip()
+
+    # Extract numeric after Answer or Final Answer 
+    REGEX_FINAL_ANSWER = r'(?:Final\s+Answer|Answer)[^0-9]*([0-9]+)'
+    quant_match = re.search(REGEX_FINAL_ANSWER, final_answer, re.IGNORECASE)
+    if quant_match:
+        final_answer = quant_match.group(1).strip()
+    return final_answer, thinking

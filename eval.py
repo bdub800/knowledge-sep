@@ -8,7 +8,7 @@ import pandas as pd
 
 from model import instantiate_model
 from data import get_generation_dataloader
-from utils import sample_tokens, process_answer
+from utils import sample_tokens, process_answer, process_answer_base
 
 torch.serialization.add_safe_globals([argparse.Namespace])
 
@@ -200,7 +200,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 else:
                     generated_answer = generated_texts[i]
 
-                final_answer, thinking = process_answer(tokenizer, generated_answer)
+                final_answer, thinking = process_answer_base(tokenizer, generated_answer)
 
                 try:
                     is_match = float(final_answer) == float(ground_truths[i])
@@ -291,25 +291,26 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load checkpoint and rebuild model
-    print(f"Loading checkpoint: {args.ckpt_path}")
-    checkpoint = torch.load(args.ckpt_path, map_location=device)
-    train_config = checkpoint['config']
+    # # Load checkpoint and rebuild model
+    # print(f"Loading checkpoint: {args.ckpt_path}")
+    # checkpoint = torch.load(args.ckpt_path, map_location=device)
+    # train_config = checkpoint['config']
 
-    # Use training config for model hyperparams if not overridden
-    args.base_model = train_config.base_model
-    args.num_recurrent_layers = train_config.num_recurrent_layers
-    # args.N_supervision = train_config.N_supervision
-    args.n_latent_recursions = train_config.n_latent_recursions
-    # args.T_outer_loops = train_config.T_outer_loops
-    args.freeze_base = train_config.freeze_base
+    # # Use training config for model hyperparams if not overridden
+    # args.base_model = train_config.base_model
+    # args.num_recurrent_layers = train_config.num_recurrent_layers
+    # # args.N_supervision = train_config.N_supervision
+    # args.n_latent_recursions = train_config.n_latent_recursions
+    # # args.T_outer_loops = train_config.T_outer_loops
+    # args.freeze_base = train_config.freeze_base
 
-    # args.base_model = 'Qwen/Qwen3-0.6B'
-    # args.num_recurrent_layers = 1
+    args.base_model = 'Qwen/Qwen3-0.6B'
+    args.num_recurrent_layers = 1
+    args.freeze_base = False
     tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
 
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print("Checkpoint loaded successfully.")
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # print("Checkpoint loaded successfully.")
     
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,
