@@ -256,7 +256,7 @@ class ModelWithRecurrentHead(nn.Module):
 def instantiate_model(base_model_name: str, num_recurrent_layers: int, device: torch.device, freeze_base: bool = False):
     # Load tokenizer and base model
     print(f"Loading base model: {base_model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-0.6B')
 
     # Add padding token if not present
     if tokenizer.pad_token is None:
