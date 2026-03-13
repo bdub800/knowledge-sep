@@ -48,6 +48,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             ground_truths = batch['ground_truths']
+            gold_cots = batch['gold_cots']
 
             prompt_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=False)
 
@@ -160,7 +161,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                 else:
                     generated_answer = generated_texts[i]
 
-                final_answer, thinking = process_answer_base(tokenizer, generated_answer)
+                final_answer, thinking = process_answer(tokenizer, generated_answer)
 
                 try:
                     is_match = float(final_answer) == float(ground_truths[i])
@@ -177,6 +178,7 @@ def evaluate_generation(model, tokenizer, eval_loader, device, config):
                     'final_answer': final_answer,
                     'is_match': is_match,
                     'ground_truth': ground_truths[i],
+                    'gold_cot': gold_cots[i],
                     'new_updates': n_updates_new_tokens[i].numpy().astype('int'),
                 })
 

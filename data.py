@@ -139,11 +139,9 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
     # Extract question and ground truth answer
     def prepare_for_generation(example):
         # Extract ground truth answer (after ####)
-        parts = example['answer'].split('####')
-        if len(parts) == 2:
-            ground_truth = parts[1].strip()
-        else:
-            ground_truth = ""
+        thinking, ans = example['answer'].split('####')
+        gold_cot = thinking.strip()
+        ground_truth = ans.strip()
 
         # Format as chat and apply template
         messages = [
@@ -164,7 +162,8 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
 
         return {
             'prompt': prompt,
-            'ground_truth': ground_truth
+            'ground_truth': ground_truth,
+            'gold_cot': gold_cot,
         }
 
     ds = ds.map(prepare_for_generation, remove_columns=ds.column_names)
@@ -173,6 +172,7 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
     def collate_fn(batch):
         prompts = [item['prompt'] for item in batch]
         ground_truths = [item['ground_truth'] for item in batch]
+        gold_cots = [item['gold_cot'] for item in batch]
 
         # Tokenize with LEFT padding for batch generation
         tokenized = tokenizer(
@@ -187,7 +187,8 @@ def get_generation_dataloader(tokenizer, max_length, batch_size, seed, train=Fal
         return {
             'input_ids': tokenized['input_ids'],
             'attention_mask': tokenized['attention_mask'],
-            'ground_truths': ground_truths
+            'ground_truths': ground_truths,
+            'gold_cots': gold_cots,
         }
 
     return DataLoader(

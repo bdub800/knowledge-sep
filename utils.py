@@ -105,7 +105,7 @@ def process_answer(tokenizer, generated_answer: str) -> Tuple[str, str]:
             final_answer = boxed_match.group(1).strip()
     return final_answer, thinking
 
-def process_answer_base(tokenizer, generated_answer: str) -> Tuple[str, str]:
+def process_answer_untrained(tokenizer, generated_answer: str) -> Tuple[str, str]:
     # Cut off parts after EOS token
     before_eos = generated_answer.split(tokenizer.special_tokens_map['eos_token'])[0].strip()
     split_by_end_think = before_eos.split('</think>')
@@ -114,9 +114,15 @@ def process_answer_base(tokenizer, generated_answer: str) -> Tuple[str, str]:
     # part after last </think> token
     final_answer = split_by_end_think[-1].strip()
 
-    # Extract numeric after Answer or Final Answer 
-    REGEX_FINAL_ANSWER = r'(?:Final\s+Answer|Answer)[^0-9]*([0-9]+)'
+    # Extract answer 
+    REGEX_FINAL_ANSWER = r'(?:Final\s+Answer|Answer)[^0-9]*([\d,\\!]+(?:\.\d+)?)'
+    REGEX_LAST_LINE = r'[^0-9]*([\d,\\!]+(?:\.\d+)?)'
     quant_match = re.search(REGEX_FINAL_ANSWER, final_answer, re.IGNORECASE)
     if quant_match:
         final_answer = quant_match.group(1).strip()
+    else:
+        line_match = re.search(REGEX_LAST_LINE, final_answer.split('\n')[-1], re.IGNORECASE)
+        if line_match:
+            final_answer = line_match.group(1).strip()
+        
     return final_answer, thinking

@@ -1,13 +1,13 @@
 import os
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 import argparse
 import wandb
 
 from model import instantiate_model
 from data import get_dataloader, get_generation_dataloader
-from eval import evaluate, evaluate_generation, INCR_TABLE_COLS
+from eval import evaluate_generation, INCR_TABLE_COLS
 from loss import compute_lm_loss
 
 
