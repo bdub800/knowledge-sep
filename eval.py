@@ -8,7 +8,7 @@ import pandas as pd
 
 from model import instantiate_model
 from data import get_generation_dataloader
-from utils import sample_tokens, process_answer, process_answer_base
+from utils import sample_tokens, process_answer, process_answer_untrained
 
 torch.serialization.add_safe_globals([argparse.Namespace])
 
@@ -211,7 +211,8 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluate model on some dataset')
 
     # Model arguments
-    parser.add_argument('--ckpt_path', type=str, help='Path to saved model')
+    parser.add_argument('--ckpt_path', type=str, default='', help='Path to saved model')
+    parser.add_argument('--model_name', type=str, default='', help='Name of model to load')
 
     # Evaluation arguments
     parser.add_argument('--eval_batch_size', type=int, default=8,
@@ -253,26 +254,30 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # # Load checkpoint and rebuild model
-    # print(f"Loading checkpoint: {args.ckpt_path}")
-    # checkpoint = torch.load(args.ckpt_path, map_location=device)
-    # train_config = checkpoint['config']
+    if args.ckpt_path:
+        # Load checkpoint and rebuild model
+        print(f"Loading checkpoint: {args.ckpt_path}")
+        checkpoint = torch.load(args.ckpt_path, map_location=device)
+        train_config = checkpoint['config']
 
-    # # Use training config for model hyperparams if not overridden
-    # args.base_model = train_config.base_model
-    # args.num_recurrent_layers = train_config.num_recurrent_layers
-    # # args.N_supervision = train_config.N_supervision
-    # args.n_latent_recursions = train_config.n_latent_recursions
-    # # args.T_outer_loops = train_config.T_outer_loops
-    # args.freeze_base = train_config.freeze_base
+        # Use training config for model hyperparams if not overridden
+        args.base_model = train_config.base_model
+        args.num_recurrent_layers = train_config.num_recurrent_layers
+        # args.N_supervision = train_config.N_supervision
+        args.n_latent_recursions = train_config.n_latent_recursions
+        # args.T_outer_loops = train_config.T_outer_loops
+        args.freeze_base = train_config.freeze_base
 
-    args.base_model = 'Qwen/Qwen3-0.6B'
-    args.num_recurrent_layers = 1
-    args.freeze_base = False
-    tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
+        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
 
-    # model.load_state_dict(checkpoint['model_state_dict'])
-    # print("Checkpoint loaded successfully.")
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print("Checkpoint loaded successfully.")
+    
+    elif args.model_name:
+        tokenizer, model = instantiate_model(args.model_name, 1, device)
+
+    else:
+        raise ValueError('One of ckpt_path and model_name needs to be set!')
     
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,
