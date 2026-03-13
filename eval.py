@@ -268,7 +268,7 @@ def main():
         # args.T_outer_loops = train_config.T_outer_loops
         args.freeze_base = train_config.freeze_base
 
-        tokenizer, model = instantiate_model(args.base_model, args.num_recurrent_layers, device, freeze_base=args.freeze_base)
+        tokenizer, model = instantiate_model(args.base_model, 1, device, freeze_base=args.freeze_base)
 
         model.load_state_dict(checkpoint['model_state_dict'])
         print("Checkpoint loaded successfully.")
