@@ -215,12 +215,12 @@ def main():
         # args.n_latent_recursions = train_config.n_latent_recursions
         # args.T_outer_loops = train_config.T_outer_loops
 
-        tokenizer, model = instantiate_model(args.base_model, 1, device, freeze_base=args.freeze_base)
+        tokenizer, model = instantiate_model(args.base_model, 0, device, freeze_base=args.freeze_base)
         model.load_state_dict(checkpoint['model_state_dict'])
         print("Checkpoint loaded successfully.")
     
     else:
-        tokenizer, model = instantiate_model(args.base_model, 1, device, freeze_base=args.freeze_base)
+        tokenizer, model = instantiate_model(args.base_model, 0, device, freeze_base=args.freeze_base)
 
     train_loader = get_dataloader(
         tokenizer, args.max_length, args.batch_size,

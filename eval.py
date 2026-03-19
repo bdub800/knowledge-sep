@@ -268,13 +268,13 @@ def main():
         # args.T_outer_loops = train_config.T_outer_loops
         args.freeze_base = train_config.freeze_base
 
-        tokenizer, model = instantiate_model(args.base_model, 1, device, freeze_base=args.freeze_base)
+        tokenizer, model = instantiate_model(args.base_model, 0, device, freeze_base=args.freeze_base)
 
         model.load_state_dict(checkpoint['model_state_dict'])
         print("Checkpoint loaded successfully.")
     
     elif args.model_name:
-        tokenizer, model = instantiate_model(args.model_name, 1, device)
+        tokenizer, model = instantiate_model(args.model_name, 0, device)
 
     else:
         raise ValueError('One of ckpt_path and model_name needs to be set!')
