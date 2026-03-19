@@ -222,11 +222,6 @@ def main():
     else:
         tokenizer, model = instantiate_model(args.base_model, 0, device, freeze_base=args.freeze_base)
 
-    train_loader = get_dataloader(
-        tokenizer, args.max_length, args.batch_size,
-        seed=args.seed, train=True, num_samples=args.num_train_samples,
-        enable_cot=args.enable_cot,
-    )
     eval_loader = get_generation_dataloader(
         tokenizer, args.max_length, args.eval_batch_size,
         seed=args.seed, train=False, num_samples=args.num_eval_samples,
@@ -270,6 +265,12 @@ def main():
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 50)
+
+        train_loader = get_dataloader(
+            tokenizer, args.max_length, args.batch_size,
+            seed=args.seed + epoch, train=True, num_samples=args.num_train_samples,
+            enable_cot=args.enable_cot,
+        )
 
         # Train
         train_loss, global_step = train_epoch(model, train_loader, eval_loader, tokenizer, optimizer, scheduler, device, args, global_step)
